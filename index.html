@@ -13,11 +13,10 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
   <style>
-    /* Glassmorphism & Aesthetics */
     .glass-panel {
       background: rgba(10, 10, 10, 0.85);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 255, 255, 0.15);
       box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.85);
     }
@@ -25,25 +24,24 @@
     .glass-btn {
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.2);
-      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
       -webkit-tap-highlight-color: transparent;
     }
 
     .glass-btn:hover, .glass-btn:active {
       background: rgba(255, 255, 255, 0.2);
       border-color: rgba(255, 255, 255, 0.5);
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
     }
 
     .glass-btn.active {
       background: #ffffff;
       color: #000000;
       border-color: #ffffff;
-      box-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
     }
 
     .glow-text {
-      text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
+      text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
     }
 
     /* Mobile Safe Area */
@@ -65,7 +63,6 @@
 
   <!-- TOGGLEABLE UI CONTAINER -->
   <div id="uiContainer" class="transition-opacity duration-300">
-    
     <!-- TOP HUD OVERLAY -->
     <div class="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 flex justify-between items-start pointer-events-none z-20">
       <!-- Diagnostics Readout -->
@@ -170,7 +167,6 @@
     Tap anywhere on screen to show UI
   </div>
 
-  <!-- APPLICATION SCRIPT -->
   <script>
     let currentMode = 'laser'; 
     let currentFilterIndex = 0;
@@ -197,7 +193,7 @@
     let pinchCooldown = false;
 
     // --- RELATIVISTIC BLACK HOLE ENGINE VARIABLES ---
-    const NUM_BH_PARTICLES = 360;
+    const NUM_BH_PARTICLES = 180; // Optimized particle count for high FPS
     let bhParticles = [];
     let bhPos = { x: 0, y: 0 };
     let bhRadius = 110;
@@ -223,26 +219,28 @@
       }
     }
 
-    // --- CAMERA & MEDIAPIPE ---
+    // --- CAMERA & MEDIAPIPE (OPTIMIZED FOR HIGH FPS) ---
     async function initCameraAndMediaPipe() {
       const hands = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
 
+      // KEY FPS BOOST: modelComplexity: 0 (Lite model tuned for high FPS real-time tracking)
       hands.setOptions({
         maxNumHands: 2,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.65,
-        minTrackingConfidence: 0.65
+        modelComplexity: 0, 
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
       });
 
       hands.onResults(onHandResults);
 
       try {
+        // Optimized capture resolution for high frame rates
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            width: { ideal: 640 },
+            height: { ideal: 480 },
             facingMode: 'user'
           },
           audio: false
@@ -263,7 +261,7 @@
         requestAnimationFrame(processVideoFrame);
       } catch (err) {
         console.error('Camera Access Error:', err);
-        alert('Webcam access is required for AR Hand Tracking.');
+        showPinchBadge("CAMERA ACCESS DENIED");
       }
     }
 
@@ -326,8 +324,8 @@
     }
 
     function mapLandmarkToScreen(landmark) {
-      const vWidth = videoElement.videoWidth || 1280;
-      const vHeight = videoElement.videoHeight || 720;
+      const vWidth = videoElement.videoWidth || 640;
+      const vHeight = videoElement.videoHeight || 480;
       const cWidth = canvasElement.width;
       const cHeight = canvasElement.height;
 
@@ -354,7 +352,7 @@
       return { x: mirroredX, y: mappedY };
     }
 
-    // --- 1. LASER WEB MODE ---
+    // --- 1. LASER WEB MODE (HIGH-PERFORMANCE) ---
     function renderLaserMode(results) {
       hudGesture.textContent = results.multiHandLandmarks?.length ? "LASER ACTIVE" : "SEARCHING...";
       if (!results.multiHandLandmarks) return;
@@ -368,32 +366,30 @@
       });
 
       ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.lineWidth = 2;
+
       for (let i = 0; i < keypoints.length; i++) {
         for (let j = i + 1; j < keypoints.length; j++) {
           const ptA = keypoints[i];
           const ptB = keypoints[j];
           const dist = Math.hypot(ptA.x - ptB.x, ptA.y - ptB.y);
 
-          if (dist < 320) {
-            const alpha = 1 - (dist / 320);
+          if (dist < 300) {
+            const alpha = 1 - (dist / 300);
             ctx.beginPath();
             ctx.moveTo(ptA.x, ptA.y);
             ctx.lineTo(ptB.x, ptB.y);
-            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
-            ctx.lineWidth = 2;
-            ctx.shadowColor = '#ffffff';
-            ctx.shadowBlur = 12;
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha.toFixed(2)})`;
             ctx.stroke();
           }
         }
       }
 
+      ctx.fillStyle = '#ffffff';
       keypoints.forEach(pt => {
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 15;
+        ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
         ctx.fill();
       });
 
@@ -445,14 +441,12 @@
       ctx.closePath();
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 16;
       ctx.stroke();
 
+      ctx.fillStyle = '#ffffff';
       [p1, p2, p3, p4].forEach(p => {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
         ctx.fill();
       });
       ctx.restore();
@@ -461,7 +455,7 @@
     function applyFilterPreset(index) {
       switch (parseInt(index)) {
         case 0: ctx.filter = 'contrast(180%) brightness(120%) grayscale(100%)'; break;
-        case 1: ctx.filter = 'drop-shadow(0px 0px 8px #00ffff) invert(100%)'; break;
+        case 1: ctx.filter = 'invert(100%)'; break;
         case 2: ctx.filter = 'contrast(200%) hue-rotate(90deg) saturate(300%)'; break;
         case 3: ctx.filter = 'saturate(500%) contrast(150%)'; break;
         case 4: ctx.filter = 'invert(85%) hue-rotate(180deg) brightness(130%)'; break;
@@ -471,7 +465,7 @@
       }
     }
 
-    // --- 3. RELATIVISTIC BLACK HOLE ENGINE ---
+    // --- 3. RELATIVISTIC BLACK HOLE ENGINE (OPTIMIZED) ---
     function initBlackHoleParticles() {
       bhParticles = [];
       for (let i = 0; i < NUM_BH_PARTICLES; i++) {
@@ -479,7 +473,7 @@
           angle: Math.random() * Math.PI * 2,
           radiusNorm: 0.8 + Math.random() * 2.5,
           speed: 0.02 + Math.random() * 0.04,
-          size: 1 + Math.random() * 2.5,
+          size: 1 + Math.random() * 2.2,
           zDepth: (Math.random() - 0.5) * 0.4
         });
       }
@@ -490,7 +484,7 @@
         x: x,
         y: y,
         radius: bhRadius,
-        maxRadius: bhRadius * 4.5,
+        maxRadius: bhRadius * 4.2,
         alpha: 1.0
       });
 
@@ -508,7 +502,7 @@
         bhTargetPos.y = (h1.y + h2.y) / 2;
         
         const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
-        bhRadius = Math.max(50, Math.min(320, dist / 2));
+        bhRadius = Math.max(50, Math.min(300, dist / 2));
         hudGesture.textContent = "DUAL HAND SINGULARITY";
       } else if (numHands === 1) {
         const hand = results.multiHandLandmarks[0];
@@ -520,7 +514,7 @@
         bhTargetPos.y = wrist.y - 40;
 
         const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-        bhRadius = Math.max(60, Math.min(260, pinchDist * 1.8));
+        bhRadius = Math.max(60, Math.min(250, pinchDist * 1.8));
         hudGesture.textContent = "SINGLE HAND KERR CONTROL";
       } else {
         bhTargetPos.x = canvasElement.width / 2;
@@ -534,8 +528,8 @@
       handVelocity = Math.min(1.0, Math.hypot(dx, dy) / 30);
       lastHandPos = { ...bhTargetPos };
 
-      bhPos.x += (bhTargetPos.x - bhPos.x) * 0.14;
-      bhPos.y += (bhTargetPos.y - bhPos.y) * 0.14;
+      bhPos.x += (bhTargetPos.x - bhPos.x) * 0.16;
+      bhPos.y += (bhTargetPos.y - bhPos.y) * 0.16;
 
       const massValue = ((bhRadius / 100) ** 3).toFixed(2);
       const spinValue = (0.75 + handVelocity * 0.24).toFixed(2);
@@ -546,10 +540,11 @@
 
       ctx.save();
 
+      // Shockwaves
       for (let i = shockwaves.length - 1; i >= 0; i--) {
         const sw = shockwaves[i];
-        sw.radius += 8;
-        sw.alpha -= 0.025;
+        sw.radius += 10;
+        sw.alpha -= 0.03;
 
         if (sw.alpha <= 0 || sw.radius >= sw.maxRadius) {
           shockwaves.splice(i, 1);
@@ -558,106 +553,78 @@
 
         ctx.beginPath();
         ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(255, 255, 255, ${sw.alpha})`;
-        ctx.lineWidth = 3;
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 15;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${sw.alpha.toFixed(2)})`;
+        ctx.lineWidth = 2.5;
         ctx.stroke();
       }
 
+      // Gravitational Lensing Core
       ctx.save();
       ctx.beginPath();
-      ctx.arc(bhPos.x, bhPos.y, bhRadius * 2.4, 0, Math.PI * 2);
+      ctx.arc(bhPos.x, bhPos.y, bhRadius * 2.2, 0, Math.PI * 2);
       ctx.clip();
-      ctx.filter = `contrast(240%) brightness(75%) blur(3px)`;
       renderBaseVideoFrame();
       ctx.restore();
 
+      // Accretion Disk Warped Arcs
       ctx.beginPath();
-      ctx.ellipse(bhPos.x, bhPos.y - bhRadius * 0.35, bhRadius * 1.55, bhRadius * 0.85, 0, Math.PI, Math.PI * 2);
+      ctx.ellipse(bhPos.x, bhPos.y - bhRadius * 0.32, bhRadius * 1.5, bhRadius * 0.8, 0, Math.PI, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-      ctx.lineWidth = 14;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 25;
+      ctx.lineWidth = 12;
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.ellipse(bhPos.x, bhPos.y + bhRadius * 0.35, bhRadius * 1.55, bhRadius * 0.85, 0, 0, Math.PI);
+      ctx.ellipse(bhPos.x, bhPos.y + bhRadius * 0.32, bhRadius * 1.5, bhRadius * 0.8, 0, 0, Math.PI);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-      ctx.lineWidth = 10;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 20;
+      ctx.lineWidth = 8;
       ctx.stroke();
 
-      const jetLength = bhRadius * 3.2;
+      // Polar Hawking Jets
+      const jetLength = bhRadius * 3.0;
       const jetGlow = ctx.createLinearGradient(bhPos.x, bhPos.y - jetLength, bhPos.x, bhPos.y + jetLength);
       jetGlow.addColorStop(0, 'rgba(255,255,255,0)');
-      jetGlow.addColorStop(0.35, 'rgba(255,255,255,0.8)');
-      jetGlow.addColorStop(0.5, 'rgba(255,255,255,1.0)');
-      jetGlow.addColorStop(0.65, 'rgba(255,255,255,0.8)');
+      jetGlow.addColorStop(0.5, 'rgba(255,255,255,0.9)');
       jetGlow.addColorStop(1, 'rgba(255,255,255,0)');
 
       ctx.beginPath();
       ctx.moveTo(bhPos.x, bhPos.y - jetLength);
       ctx.lineTo(bhPos.x, bhPos.y + jetLength);
       ctx.strokeStyle = jetGlow;
-      ctx.lineWidth = 3.5;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 22;
+      ctx.lineWidth = 3;
       ctx.stroke();
 
-      bhParticles.sort((a, b) => a.zDepth - b.zDepth);
-
+      // Keplerian Particles
       bhParticles.forEach((p) => {
         const orbitRadius = p.radiusNorm * bhRadius;
         const keplerSpeed = p.speed * Math.sqrt(bhRadius / orbitRadius);
         p.angle += keplerSpeed;
 
         const px = bhPos.x + Math.cos(p.angle) * orbitRadius;
-        const py = bhPos.y + Math.sin(p.angle) * (orbitRadius * 0.3) + (p.zDepth * 15);
+        const py = bhPos.y + Math.sin(p.angle) * (orbitRadius * 0.3) + (p.zDepth * 12);
 
         const vX = -Math.sin(p.angle);
-        const dopplerFactor = 1 + vX * 0.55; 
+        const dopplerFactor = 1 + vX * 0.5; 
         const alpha = Math.min(1.0, Math.max(0.15, p.zDepth > 0 ? dopplerFactor * 0.85 : dopplerFactor * 0.35));
 
-        if (p.radiusNorm < 1.1) {
-          ctx.beginPath();
-          ctx.moveTo(px, py);
-          ctx.lineTo(bhPos.x, bhPos.y);
-          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.6})`;
-          ctx.lineWidth = 1;
-          ctx.stroke();
-        }
-
         ctx.beginPath();
-        ctx.arc(px, py, p.size * (dopplerFactor * 0.9), 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = Math.round(8 * dopplerFactor);
+        ctx.arc(px, py, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha.toFixed(2)})`;
         ctx.fill();
       });
 
+      // Photon Rings
       ctx.beginPath();
-      ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.15, 0, Math.PI * 2);
+      ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.12, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
-      ctx.lineWidth = 4;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 28;
+      ctx.lineWidth = 3.5;
       ctx.stroke();
 
-      ctx.beginPath();
-      ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.05, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-
+      // Event Horizon Core Shadow
       ctx.beginPath();
       ctx.arc(bhPos.x, bhPos.y, bhRadius, 0, Math.PI * 2);
       ctx.fillStyle = '#000000';
-      ctx.shadowColor = '#000000';
-      ctx.shadowBlur = 35;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
@@ -737,6 +704,10 @@
       ];
 
       ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.fillStyle = '#ffffff';
+
       results.multiHandLandmarks.forEach(landmarks => {
         const mapped = landmarks.map(mapLandmarkToScreen);
 
@@ -745,14 +716,11 @@
           ctx.moveTo(mapped[i].x, mapped[i].y);
           ctx.lineTo(mapped[j].x, mapped[j].y);
         });
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-        ctx.lineWidth = 1.5;
         ctx.stroke();
 
         mapped.forEach(pt => {
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
-          ctx.fillStyle = '#ffffff';
+          ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
           ctx.fill();
         });
       });
