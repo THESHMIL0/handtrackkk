@@ -15,11 +15,11 @@
   <style>
     /* Monochrome Glassmorphism & Aesthetics */
     .glass-panel {
-      background: rgba(10, 10, 10, 0.75);
+      background: rgba(10, 10, 10, 0.8);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.15);
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.85);
     }
     
     .glass-btn {
@@ -45,14 +45,13 @@
       text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
     }
 
-    /* Hide Scrollbars */
     ::-webkit-scrollbar { display: none; }
     * { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
 </head>
 <body class="h-full w-full bg-black text-white relative font-mono overflow-hidden">
 
-  <!-- Live Video Feed (Hidden, processing frame canvas) -->
+  <!-- Live Video Feed (Processing Canvas Input) -->
   <video id="webcam" class="opacity-0 pointer-events-none absolute w-full h-full object-cover" playsinline webkit-playsinline></video>
 
   <!-- AR Render Canvas -->
@@ -76,8 +75,8 @@
       </div>
     </div>
 
-    <!-- Black Hole Telemetry HUD (Shown when Black Hole mode active) -->
-    <div id="blackHoleHud" class="glass-panel rounded-xl p-3 flex-col gap-1.5 min-w-[220px] hidden">
+    <!-- Enhanced Relativistic Black Hole HUD -->
+    <div id="blackHoleHud" class="glass-panel rounded-xl p-3 flex-col gap-1.5 min-w-[240px] hidden">
       <div class="text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
         <span>SINGULARITY METRICS</span>
         <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
@@ -87,19 +86,23 @@
         <span id="bhMass" class="font-bold text-white">1.00 × 10⁶</span>
       </div>
       <div class="flex items-center justify-between text-xs">
-        <span class="text-neutral-400">RADIUS (R<sub>s</sub>)</span>
+        <span class="text-neutral-400">SCHWARZSCHILD (R<sub>s</sub>)</span>
         <span id="bhRadius" class="font-bold text-white">120 px</span>
       </div>
       <div class="flex items-center justify-between text-xs">
-        <span class="text-neutral-400">LENS DEFLECTION</span>
-        <span id="bhDeflection" class="font-bold text-white">0.00°</span>
+        <span class="text-neutral-400">KERR SPIN (a/M)</span>
+        <span id="bhSpin" class="font-bold text-white">0.92</span>
+      </div>
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-neutral-400">DOPPLER BEAMING</span>
+        <span id="bhDoppler" class="font-bold text-white">ACTIVE</span>
       </div>
     </div>
   </div>
 
-  <!-- PINCH NOTIFICATION BADGE -->
+  <!-- PINCH / SHOCKWAVE NOTIFICATION BADGE -->
   <div id="pinchBadge" class="absolute top-20 left-1/2 -translate-x-1/2 glass-panel px-4 py-1.5 rounded-full text-xs tracking-widest uppercase opacity-0 transition-opacity duration-300 pointer-events-none z-30 font-semibold text-white border border-white/30">
-    FILTER CHANGED
+    GRAVITATIONAL WAVE DISCHARGED
   </div>
 
   <!-- BOTTOM CONTROL DOCK -->
@@ -145,16 +148,13 @@
 
   <!-- APPLICATION SCRIPT -->
   <script>
-    // --- GLOBAL STATE ---
-    let currentMode = 'laser'; // 'laser' | 'dimension' | 'blackhole'
+    let currentMode = 'laser'; 
     let currentFilterIndex = 0;
     
-    // DOM Elements
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('arCanvas');
     const ctx = canvasElement.getContext('2d');
     
-    // HUD Elements
     const hudFps = document.getElementById('hudFps');
     const hudHandCount = document.getElementById('hudHandCount');
     const hudGesture = document.getElementById('hudGesture');
@@ -162,7 +162,6 @@
     const blackHoleHud = document.getElementById('blackHoleHud');
     const filterDropdown = document.getElementById('filterDropdown');
 
-    // Tracking & Engine Variables
     let isProcessingFrame = false;
     let handResults = null;
     let lastTime = performance.now();
@@ -170,14 +169,16 @@
     let fps = 0;
     let pinchCooldown = false;
 
-    // Black Hole Particle Engine
-    const NUM_BH_PARTICLES = 220;
+    // --- RELATIVISTIC BLACK HOLE ENGINE VARIABLES ---
+    const NUM_BH_PARTICLES = 360;
     let bhParticles = [];
     let bhPos = { x: 0, y: 0 };
-    let bhRadius = 120;
+    let bhRadius = 110;
     let bhTargetPos = { x: 0, y: 0 };
+    let shockwaves = [];
+    let handVelocity = 0;
+    let lastHandPos = { x: 0, y: 0 };
 
-    // --- INITIALIZATION ---
     window.addEventListener('load', () => {
       setupCanvasSize();
       initBlackHoleParticles();
@@ -195,7 +196,6 @@
       }
     }
 
-    // --- MEDIAPIPE & CAMERA SETUP ---
     async function initCameraAndMediaPipe() {
       const hands = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -239,24 +239,20 @@
       }
     }
 
-    // --- HAND RESULTS CALLBACK ---
     function onHandResults(results) {
       handResults = results;
       updateFpsCounter();
 
-      // Clear Canvas
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // Render Video Frame
+      // Render base camera stream
       renderBaseVideoFrame();
 
       const numHands = handResults.multiHandLandmarks ? handResults.multiHandLandmarks.length : 0;
       hudHandCount.textContent = numHands;
 
-      // Check Pinch Gesture across hands
       checkPinchGesture(handResults);
 
-      // Render Current Selected Mode
       if (currentMode === 'laser') {
         renderLaserMode(handResults);
       } else if (currentMode === 'dimension') {
@@ -265,13 +261,11 @@
         renderBlackHoleMode(handResults);
       }
 
-      // Draw Minimal Skeleton Overlay in non-BlackHole modes
       if (currentMode !== 'blackhole' && numHands > 0) {
         drawHandSkeletons(handResults);
       }
     }
 
-    // --- VIDEO RENDERING WITH ASPECT COVER ---
     function renderBaseVideoFrame() {
       if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) return;
 
@@ -298,14 +292,12 @@
       }
 
       ctx.save();
-      // Mirror Front Camera
       ctx.translate(cWidth, 0);
       ctx.scale(-1, 1);
       ctx.drawImage(videoElement, 0, 0, vWidth, vHeight, offsetX, offsetY, drawW, drawH);
       ctx.restore();
     }
 
-    // --- LANDMARK COORDINATE MAPPER ---
     function mapLandmarkToScreen(landmark) {
       const vWidth = videoElement.videoWidth || 1280;
       const vHeight = videoElement.videoHeight || 720;
@@ -329,7 +321,6 @@
         offsetY = 0;
       }
 
-      // Mirroring adjustment (x = 1 - landmark.x)
       const mirroredX = (1 - landmark.x) * drawW + offsetX;
       const mappedY = landmark.y * drawH + offsetY;
 
@@ -342,8 +333,6 @@
       if (!results.multiHandLandmarks) return;
 
       const keypoints = [];
-
-      // Extract key points from each hand
       results.multiHandLandmarks.forEach((landmarks) => {
         const fingerTips = [4, 8, 12, 16, 20];
         fingerTips.forEach(idx => {
@@ -351,7 +340,6 @@
         });
       });
 
-      // Render Laser Web Connections
       ctx.save();
       for (let i = 0; i < keypoints.length; i++) {
         for (let j = i + 1; j < keypoints.length; j++) {
@@ -361,8 +349,6 @@
 
           if (dist < 320) {
             const alpha = 1 - (dist / 320);
-            
-            // Core White Beam
             ctx.beginPath();
             ctx.moveTo(ptA.x, ptA.y);
             ctx.lineTo(ptB.x, ptB.y);
@@ -375,7 +361,6 @@
         }
       }
 
-      // Render Finger Nodes
       keypoints.forEach(pt => {
         ctx.beginPath();
         ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
@@ -396,25 +381,22 @@
       let p1, p2, p3, p4;
 
       if (results.multiHandLandmarks.length >= 2) {
-        // Dual Hand Portal (Between Index & Thumbs)
         const h1 = results.multiHandLandmarks[0];
         const h2 = results.multiHandLandmarks[1];
 
-        p1 = mapLandmarkToScreen(h1[8]);  // Hand 1 Index
-        p2 = mapLandmarkToScreen(h2[8]);  // Hand 2 Index
-        p3 = mapLandmarkToScreen(h2[4]);  // Hand 2 Thumb
-        p4 = mapLandmarkToScreen(h1[4]);  // Hand 1 Thumb
+        p1 = mapLandmarkToScreen(h1[8]);
+        p2 = mapLandmarkToScreen(h2[8]);
+        p3 = mapLandmarkToScreen(h2[4]);
+        p4 = mapLandmarkToScreen(h1[4]);
       } else {
-        // Single Hand Bounding Quad
         const h = results.multiHandLandmarks[0];
-        p1 = mapLandmarkToScreen(h[8]);  // Index
-        p2 = mapLandmarkToScreen(h[12]); // Middle
-        p3 = mapLandmarkToScreen(h[20]); // Pinky
-        p4 = mapLandmarkToScreen(h[4]);  // Thumb
+        p1 = mapLandmarkToScreen(h[8]);
+        p2 = mapLandmarkToScreen(h[12]);
+        p3 = mapLandmarkToScreen(h[20]);
+        p4 = mapLandmarkToScreen(h[4]);
       }
 
       ctx.save();
-      // Quad Clipping Path
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
@@ -423,15 +405,10 @@
       ctx.closePath();
       
       ctx.clip();
-
-      // Apply Visual Preset Filter within Portal
       applyFilterPreset(currentFilterIndex);
-      
-      // Redraw video feed inside clipped portal
       renderBaseVideoFrame();
       ctx.restore();
 
-      // Draw Bounding Frame & Corner Nodes
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
@@ -456,51 +433,50 @@
 
     function applyFilterPreset(index) {
       switch (parseInt(index)) {
-        case 0: // Pixel Matrix
-          ctx.filter = 'contrast(180%) brightness(120%) grayscale(100%)';
-          break;
-        case 1: // Cyan Outlines
-          ctx.filter = 'drop-shadow(0px 0px 8px #00ffff) invert(100%)';
-          break;
-        case 2: // 80s VHS Synth
-          ctx.filter = 'contrast(200%) hue-rotate(90deg) saturate(300%)';
-          break;
-        case 3: // Pop-Art
-          ctx.filter = 'saturate(500%) contrast(150%)';
-          break;
-        case 4: // Neon Cyberpunk
-          ctx.filter = 'invert(85%) hue-rotate(180deg) brightness(130%)';
-          break;
-        case 5: // Thermal Heat
-          ctx.filter = 'invert(100%) hue-rotate(240deg) saturate(400%)';
-          break;
-        case 6: // Negative Invert
-          ctx.filter = 'invert(100%) grayscale(100%)';
-          break;
-        default:
-          ctx.filter = 'none';
+        case 0: ctx.filter = 'contrast(180%) brightness(120%) grayscale(100%)'; break;
+        case 1: ctx.filter = 'drop-shadow(0px 0px 8px #00ffff) invert(100%)'; break;
+        case 2: ctx.filter = 'contrast(200%) hue-rotate(90deg) saturate(300%)'; break;
+        case 3: ctx.filter = 'saturate(500%) contrast(150%)'; break;
+        case 4: ctx.filter = 'invert(85%) hue-rotate(180deg) brightness(130%)'; break;
+        case 5: ctx.filter = 'invert(100%) hue-rotate(240deg) saturate(400%)'; break;
+        case 6: ctx.filter = 'invert(100%) grayscale(100%)'; break;
+        default: ctx.filter = 'none';
       }
     }
 
-    // --- 3. BLACK HOLE SINGULARITY MODE ---
+    // --- 3. UPGRADED RELATIVISTIC BLACK HOLE ENGINE ---
     function initBlackHoleParticles() {
       bhParticles = [];
       for (let i = 0; i < NUM_BH_PARTICLES; i++) {
         bhParticles.push({
           angle: Math.random() * Math.PI * 2,
-          radius: 80 + Math.random() * 260,
-          speed: 0.015 + Math.random() * 0.035,
+          radiusNorm: 0.8 + Math.random() * 2.5, // Ratio relative to Rs
+          speed: 0.02 + Math.random() * 0.04,
           size: 1 + Math.random() * 2.5,
-          alpha: 0.3 + Math.random() * 0.7
+          zDepth: (Math.random() - 0.5) * 0.4
         });
       }
+    }
+
+    function triggerGravitationalWave(x, y) {
+      shockwaves.push({
+        x: x,
+        y: y,
+        radius: bhRadius,
+        maxRadius: bhRadius * 4.5,
+        alpha: 1.0
+      });
+
+      pinchBadge.textContent = "GRAVITATIONAL WAVE DISCHARGED";
+      pinchBadge.classList.remove('opacity-0');
+      pinchBadge.classList.add('opacity-100');
+      setTimeout(() => pinchBadge.classList.replace('opacity-100', 'opacity-0'), 1200);
     }
 
     function renderBlackHoleMode(results) {
       const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
       
       if (numHands === 2) {
-        // Position between both hands, Radius = Distance
         const h1 = mapLandmarkToScreen(results.multiHandLandmarks[0][9]);
         const h2 = mapLandmarkToScreen(results.multiHandLandmarks[1][9]);
 
@@ -509,9 +485,8 @@
         
         const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
         bhRadius = Math.max(50, Math.min(320, dist / 2));
-        hudGesture.textContent = "DUAL HAND CONTROL";
+        hudGesture.textContent = "DUAL HAND SINGULARITY";
       } else if (numHands === 1) {
-        // Single hand pinch spread controls radius
         const hand = results.multiHandLandmarks[0];
         const wrist = mapLandmarkToScreen(hand[0]);
         const indexTip = mapLandmarkToScreen(hand[8]);
@@ -522,102 +497,182 @@
 
         const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
         bhRadius = Math.max(60, Math.min(260, pinchDist * 1.8));
-        hudGesture.textContent = "SINGLE HAND CONTROL";
+        hudGesture.textContent = "SINGLE HAND KERR CONTROL";
       } else {
-        // Drift back to center standby
         bhTargetPos.x = canvasElement.width / 2;
         bhTargetPos.y = canvasElement.height / 2;
-        bhRadius = 100 + Math.sin(Date.now() * 0.002) * 15;
-        hudGesture.textContent = "STANDBY MODE";
+        bhRadius = 110 + Math.sin(Date.now() * 0.002) * 12;
+        hudGesture.textContent = "ORBITAL STANDBY";
       }
 
-      // Smooth Easing Interpolation
-      bhPos.x += (bhTargetPos.x - bhPos.x) * 0.12;
-      bhPos.y += (bhTargetPos.y - bhPos.y) * 0.12;
+      // Compute Hand velocity for spin calculation
+      const dx = bhTargetPos.x - lastHandPos.x;
+      const dy = bhTargetPos.y - lastHandPos.y;
+      handVelocity = Math.min(1.0, Math.hypot(dx, dy) / 30);
+      lastHandPos = { ...bhTargetPos };
 
-      // Update HUD Physics Telemetry
+      // Smooth Easing Interpolation
+      bhPos.x += (bhTargetPos.x - bhPos.x) * 0.14;
+      bhPos.y += (bhTargetPos.y - bhPos.y) * 0.14;
+
+      // Physics Metrics Calculation
       const massValue = ((bhRadius / 100) ** 3).toFixed(2);
-      const deflectionAngle = ((bhRadius / 100) * 1.42).toFixed(2);
+      const spinValue = (0.75 + handVelocity * 0.24).toFixed(2);
+
       document.getElementById('bhMass').innerHTML = `${massValue} × 10⁶`;
       document.getElementById('bhRadius').textContent = `${Math.round(bhRadius)} px`;
-      document.getElementById('bhDeflection').textContent = `${deflectionAngle}°`;
+      document.getElementById('bhSpin').textContent = spinValue;
 
       ctx.save();
 
-      // A. Gravitational Lensing Radial Distortion
+      // A. Gravitational Wave Shockwaves
+      for (let i = shockwaves.length - 1; i >= 0; i--) {
+        const sw = shockwaves[i];
+        sw.radius += 8;
+        sw.alpha -= 0.025;
+
+        if (sw.alpha <= 0 || sw.radius >= sw.maxRadius) {
+          shockwaves.splice(i, 1);
+          continue;
+        }
+
+        ctx.beginPath();
+        ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 255, 255, ${sw.alpha})`;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 15;
+        ctx.stroke();
+      }
+
+      // B. Gravitational Lensing Distortion Lens (Spacetime Bending)
       ctx.save();
       ctx.beginPath();
-      ctx.arc(bhPos.x, bhPos.y, bhRadius * 2.2, 0, Math.PI * 2);
+      ctx.arc(bhPos.x, bhPos.y, bhRadius * 2.4, 0, Math.PI * 2);
       ctx.clip();
-      ctx.filter = `contrast(220%) brightness(80%) blur(2px)`;
+      ctx.filter = `contrast(240%) brightness(75%) blur(3px)`;
       renderBaseVideoFrame();
       ctx.restore();
 
-      // B. Relativistic Hawking Jets
+      // C. Lensed Upper & Lower Accretion Disk Halo (Interstellar Gravitational Distortion)
+      // Lensed Back Arc (Warped Over top of singularity)
       ctx.beginPath();
-      ctx.moveTo(bhPos.x, bhPos.y - bhRadius * 2.8);
-      ctx.lineTo(bhPos.x, bhPos.y + bhRadius * 2.8);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-      ctx.lineWidth = 3;
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 20;
-      ctx.stroke();
-
-      // C. Keplerian Accretion Disk Particle System
-      bhParticles.forEach((p) => {
-        p.angle += p.speed * (120 / bhRadius);
-        const curR = p.radius * (bhRadius / 100);
-        
-        // Elliptical Accretion Disk tilt
-        const px = bhPos.x + Math.cos(p.angle) * curR;
-        const py = bhPos.y + Math.sin(p.angle) * (curR * 0.35);
-
-        ctx.beginPath();
-        ctx.arc(px, py, p.size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
-        ctx.shadowColor = '#ffffff';
-        ctx.shadowBlur = 8;
-        ctx.fill();
-      });
-
-      // D. Photon Ring Halo
-      ctx.beginPath();
-      ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.12, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
-      ctx.lineWidth = 4;
+      ctx.ellipse(bhPos.x, bhPos.y - bhRadius * 0.35, bhRadius * 1.55, bhRadius * 0.85, 0, Math.PI, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.lineWidth = 14;
       ctx.shadowColor = '#ffffff';
       ctx.shadowBlur = 25;
       ctx.stroke();
 
-      // E. Event Horizon Schwarzschild Shadow (Pure Black Hole Singularity)
+      // Lensed Back Arc (Warped Under bottom of singularity)
+      ctx.beginPath();
+      ctx.ellipse(bhPos.x, bhPos.y + bhRadius * 0.35, bhRadius * 1.55, bhRadius * 0.85, 0, 0, Math.PI);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      ctx.lineWidth = 10;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 20;
+      ctx.stroke();
+
+      // D. Relativistic Polar Magnetic Hawking Jets
+      const jetLength = bhRadius * 3.2;
+      const jetGlow = ctx.createLinearGradient(bhPos.x, bhPos.y - jetLength, bhPos.x, bhPos.y + jetLength);
+      jetGlow.addColorStop(0, 'rgba(255,255,255,0)');
+      jetGlow.addColorStop(0.35, 'rgba(255,255,255,0.8)');
+      jetGlow.addColorStop(0.5, 'rgba(255,255,255,1.0)');
+      jetGlow.addColorStop(0.65, 'rgba(255,255,255,0.8)');
+      jetGlow.addColorStop(1, 'rgba(255,255,255,0)');
+
+      ctx.beginPath();
+      ctx.moveTo(bhPos.x, bhPos.y - jetLength);
+      ctx.lineTo(bhPos.x, bhPos.y + jetLength);
+      ctx.strokeStyle = jetGlow;
+      ctx.lineWidth = 3.5;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 22;
+      ctx.stroke();
+
+      // E. Keplerian Orbital Accretion Disk with Relativistic Doppler Beaming
+      bhParticles.sort((a, b) => a.zDepth - b.zDepth);
+
+      bhParticles.forEach((p) => {
+        // Keplerian Velocity ($v \propto 1/\sqrt{r}$)
+        const orbitRadius = p.radiusNorm * bhRadius;
+        const keplerSpeed = p.speed * Math.sqrt(bhRadius / orbitRadius);
+        p.angle += keplerSpeed;
+
+        const px = bhPos.x + Math.cos(p.angle) * orbitRadius;
+        const py = bhPos.y + Math.sin(p.angle) * (orbitRadius * 0.3) + (p.zDepth * 15);
+
+        // Relativistic Doppler Beaming (Approaching side / left side is brighter)
+        const vX = -Math.sin(p.angle); // Velocity along line of sight
+        const dopplerFactor = 1 + vX * 0.55; 
+        const alpha = Math.min(1.0, Math.max(0.15, p.zDepth > 0 ? dopplerFactor * 0.85 : dopplerFactor * 0.35));
+
+        // Spaghettification (Infalling Streaks near ISCO)
+        if (p.radiusNorm < 1.1) {
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.lineTo(bhPos.x, bhPos.y);
+          ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.6})`;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+
+        ctx.beginPath();
+        ctx.arc(px, py, p.size * (dopplerFactor * 0.9), 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = Math.round(8 * dopplerFactor);
+        ctx.fill();
+      });
+
+      // F. Double Photon Sphere Rings
+      ctx.beginPath();
+      ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.15, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 28;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.05, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // G. Event Horizon Shadow Threshold (Singularity Core)
       ctx.beginPath();
       ctx.arc(bhPos.x, bhPos.y, bhRadius, 0, Math.PI * 2);
       ctx.fillStyle = '#000000';
       ctx.shadowColor = '#000000';
-      ctx.shadowBlur = 30;
+      ctx.shadowBlur = 35;
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
       ctx.restore();
     }
 
-    // --- HELPER: PINCH GESTURE CYCLE ---
     function checkPinchGesture(results) {
-      if (!results.multiHandLandmarks || currentMode !== 'dimension') return;
+      if (!results.multiHandLandmarks) return;
 
       for (let landmarks of results.multiHandLandmarks) {
         const indexTip = mapLandmarkToScreen(landmarks[8]);
         const thumbTip = mapLandmarkToScreen(landmarks[4]);
         const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
 
-        if (dist < 28 && !pinchCooldown) {
+        if (dist < 26 && !pinchCooldown) {
           pinchCooldown = true;
-          currentFilterIndex = (currentFilterIndex + 1) % 7;
-          document.getElementById('filterSelect').value = currentFilterIndex;
-          
-          showPinchBadge();
+
+          if (currentMode === 'dimension') {
+            currentFilterIndex = (currentFilterIndex + 1) % 7;
+            document.getElementById('filterSelect').value = currentFilterIndex;
+            showPinchBadge("FILTER CHANGED");
+          } else if (currentMode === 'blackhole') {
+            triggerGravitationalWave(indexTip.x, indexTip.y);
+          }
 
           setTimeout(() => { pinchCooldown = false; }, 800);
           break;
@@ -625,7 +680,8 @@
       }
     }
 
-    function showPinchBadge() {
+    function showPinchBadge(text) {
+      if (text) pinchBadge.textContent = text;
       pinchBadge.classList.remove('opacity-0');
       pinchBadge.classList.add('opacity-100');
       setTimeout(() => {
@@ -634,7 +690,6 @@
       }, 1200);
     }
 
-    // --- HELPER: MINIMAL SKELETON DRAW ---
     function drawHandSkeletons(results) {
       if (!results.multiHandLandmarks) return;
 
@@ -650,7 +705,6 @@
       results.multiHandLandmarks.forEach(landmarks => {
         const mapped = landmarks.map(mapLandmarkToScreen);
 
-        // Lines
         ctx.beginPath();
         connections.forEach(([i, j]) => {
           ctx.moveTo(mapped[i].x, mapped[i].y);
@@ -660,7 +714,6 @@
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
-        // Keypoints
         mapped.forEach(pt => {
           ctx.beginPath();
           ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
@@ -671,7 +724,6 @@
       ctx.restore();
     }
 
-    // --- HELPER: FPS COUNTER ---
     function updateFpsCounter() {
       const now = performance.now();
       frameCount++;
@@ -683,7 +735,6 @@
       }
     }
 
-    // --- UI CONTROLS & MODE SWITCHER ---
     function setMode(mode) {
       currentMode = mode;
 
@@ -698,7 +749,7 @@
 
     function changeFilter(val) {
       currentFilterIndex = parseInt(val);
-      showPinchBadge();
+      showPinchBadge("FILTER CHANGED");
     }
   </script>
 </body>
