@@ -2,8 +2,8 @@
 <html lang="en" class="h-full bg-black text-white select-none overflow-hidden">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>AR Spatial Vision & Singularity Suite</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>AR Spatial Vision Suite</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -13,9 +13,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
   <style>
-    /* Monochrome Glassmorphism & Aesthetics */
+    /* Glassmorphism & Aesthetics */
     .glass-panel {
-      background: rgba(10, 10, 10, 0.8);
+      background: rgba(10, 10, 10, 0.85);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.15);
@@ -26,9 +26,10 @@
       background: rgba(255, 255, 255, 0.05);
       border: 1px solid rgba(255, 255, 255, 0.2);
       transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      -webkit-tap-highlight-color: transparent;
     }
 
-    .glass-btn:hover {
+    .glass-btn:hover, .glass-btn:active {
       background: rgba(255, 255, 255, 0.2);
       border-color: rgba(255, 255, 255, 0.5);
       box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
@@ -45,111 +46,135 @@
       text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
     }
 
+    /* Mobile Safe Area */
+    .pb-safe {
+      padding-bottom: max(1rem, env(safe-area-inset-bottom));
+    }
+
     ::-webkit-scrollbar { display: none; }
     * { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
 </head>
 <body class="h-full w-full bg-black text-white relative font-mono overflow-hidden">
 
-  <!-- Live Video Feed (Processing Canvas Input) -->
+  <!-- Live Video Feed (Hidden processing source) -->
   <video id="webcam" class="opacity-0 pointer-events-none absolute w-full h-full object-cover" playsinline webkit-playsinline></video>
 
   <!-- AR Render Canvas -->
-  <canvas id="arCanvas" class="w-full h-full absolute inset-0 object-cover"></canvas>
+  <canvas id="arCanvas" onclick="handleCanvasClick()" class="w-full h-full absolute inset-0 object-cover cursor-pointer"></canvas>
 
-  <!-- TOP HUD OVERLAY -->
-  <div class="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none z-20">
-    <!-- Diagnostics Readout -->
-    <div class="glass-panel rounded-xl p-3 flex flex-col gap-1.5 min-w-[200px]">
-      <div class="flex items-center justify-between text-xs tracking-wider border-b border-white/10 pb-1.5">
-        <span class="text-neutral-400">FPS</span>
-        <span id="hudFps" class="font-bold text-white glow-text">--</span>
+  <!-- TOGGLEABLE UI CONTAINER -->
+  <div id="uiContainer" class="transition-opacity duration-300">
+    
+    <!-- TOP HUD OVERLAY -->
+    <div class="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 flex justify-between items-start pointer-events-none z-20">
+      <!-- Diagnostics Readout -->
+      <div class="glass-panel rounded-xl p-2.5 sm:p-3 flex flex-col gap-1 min-w-[150px] sm:min-w-[180px]">
+        <div class="flex items-center justify-between text-[10px] sm:text-xs tracking-wider border-b border-white/10 pb-1">
+          <span class="text-neutral-400">FPS</span>
+          <span id="hudFps" class="font-bold text-white glow-text">--</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs tracking-wider">
+          <span class="text-neutral-400">HANDS</span>
+          <span id="hudHandCount" class="font-bold text-white">0</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs tracking-wider">
+          <span class="text-neutral-400">STATE</span>
+          <span id="hudGesture" class="font-bold text-neutral-300 truncate max-w-[90px] sm:max-w-none">SEARCHING...</span>
+        </div>
       </div>
-      <div class="flex items-center justify-between text-xs tracking-wider">
-        <span class="text-neutral-400">TRACKED HANDS</span>
-        <span id="hudHandCount" class="font-bold text-white">0</span>
-      </div>
-      <div class="flex items-center justify-between text-xs tracking-wider">
-        <span class="text-neutral-400">GESTURE</span>
-        <span id="hudGesture" class="font-bold text-neutral-300">SEARCHING...</span>
+
+      <!-- Black Hole HUD -->
+      <div id="blackHoleHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex-col gap-1 min-w-[170px] sm:min-w-[210px] hidden">
+        <div class="text-[9px] sm:text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
+          <span>SINGULARITY METRICS</span>
+          <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">MASS (M<sub>☉</sub>)</span>
+          <span id="bhMass" class="font-bold text-white">1.00 × 10⁶</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">SCHWARZSCHILD</span>
+          <span id="bhRadius" class="font-bold text-white">120 px</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">KERR SPIN</span>
+          <span id="bhSpin" class="font-bold text-white">0.92</span>
+        </div>
       </div>
     </div>
 
-    <!-- Enhanced Relativistic Black Hole HUD -->
-    <div id="blackHoleHud" class="glass-panel rounded-xl p-3 flex-col gap-1.5 min-w-[240px] hidden">
-      <div class="text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
-        <span>SINGULARITY METRICS</span>
-        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
-      </div>
-      <div class="flex items-center justify-between text-xs">
-        <span class="text-neutral-400">MASS (M<sub>☉</sub>)</span>
-        <span id="bhMass" class="font-bold text-white">1.00 × 10⁶</span>
-      </div>
-      <div class="flex items-center justify-between text-xs">
-        <span class="text-neutral-400">SCHWARZSCHILD (R<sub>s</sub>)</span>
-        <span id="bhRadius" class="font-bold text-white">120 px</span>
-      </div>
-      <div class="flex items-center justify-between text-xs">
-        <span class="text-neutral-400">KERR SPIN (a/M)</span>
-        <span id="bhSpin" class="font-bold text-white">0.92</span>
-      </div>
-      <div class="flex items-center justify-between text-xs">
-        <span class="text-neutral-400">DOPPLER BEAMING</span>
-        <span id="bhDoppler" class="font-bold text-white">ACTIVE</span>
+    <!-- PINCH / SHOCKWAVE NOTIFICATION BADGE -->
+    <div id="pinchBadge" class="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 glass-panel px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[10px] sm:text-xs tracking-widest uppercase opacity-0 transition-opacity duration-300 pointer-events-none z-30 font-semibold text-white border border-white/30 text-center whitespace-nowrap">
+      GRAVITATIONAL WAVE DISCHARGED
+    </div>
+
+    <!-- BOTTOM CONTROL DOCK (ICON ONLY + CAMERA TOGGLE) -->
+    <div class="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 pb-safe pointer-events-auto">
+      <div class="flex items-center gap-2 p-1.5 glass-panel rounded-2xl">
+        
+        <!-- Laser Web Mode -->
+        <button id="btnLaserMode" onclick="setMode('laser')" title="Laser Web Mode" aria-label="Laser Web Mode" class="glass-btn active w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+          </svg>
+        </button>
+
+        <!-- Dimension Box Mode -->
+        <button id="btnDimensionMode" onclick="setMode('dimension')" title="Dimension Box Mode" aria-label="Dimension Box Mode" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+          </svg>
+        </button>
+
+        <!-- Black Hole Mode -->
+        <button id="btnBlackHoleMode" onclick="setMode('blackhole')" title="Black Hole Mode" aria-label="Black Hole Mode" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9" stroke-width="2" stroke-dasharray="4 2"/>
+            <circle cx="12" cy="12" r="4" fill="currentColor"/>
+          </svg>
+        </button>
+
+        <!-- Filter Selector (Dimension Box Mode only) -->
+        <div id="filterDropdown" class="hidden border-l border-white/20 pl-2 my-0.5 shrink-0">
+          <select id="filterSelect" onchange="changeFilter(this.value)" class="bg-black/90 text-white text-[11px] sm:text-xs rounded-xl border border-white/30 px-2 py-2.5 h-11 sm:h-12 focus:outline-none focus:border-white max-w-[110px] sm:max-w-[140px]">
+            <option value="0">👾 Pixel</option>
+            <option value="1">🌐 Cyan</option>
+            <option value="2">📺 80s VHS</option>
+            <option value="3">🎨 Pop-Art</option>
+            <option value="4">🎆 Neon</option>
+            <option value="5">🔥 Thermal</option>
+            <option value="6">⚡ Negative</option>
+          </select>
+        </div>
+
+        <!-- Vertical Divider -->
+        <div class="w-px h-6 bg-white/20 my-auto shrink-0"></div>
+
+        <!-- Camera / Invisible UI Button -->
+        <button id="btnToggleUi" onclick="toggleUi(false)" title="Hide UI (Camera View)" aria-label="Hide UI" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h3.28a1 1 0 00.948-.684l1.498-4.493A1 1 0 0111.672 1h0.656a1 1 0 01.948.684l1.498 4.493A1 1 0 0015.72 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <circle cx="12" cy="13" r="3" stroke-width="2" />
+          </svg>
+        </button>
+
       </div>
     </div>
+
   </div>
 
-  <!-- PINCH / SHOCKWAVE NOTIFICATION BADGE -->
-  <div id="pinchBadge" class="absolute top-20 left-1/2 -translate-x-1/2 glass-panel px-4 py-1.5 rounded-full text-xs tracking-widest uppercase opacity-0 transition-opacity duration-300 pointer-events-none z-30 font-semibold text-white border border-white/30">
-    GRAVITATIONAL WAVE DISCHARGED
-  </div>
-
-  <!-- BOTTOM CONTROL DOCK -->
-  <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 p-2 glass-panel rounded-2xl pointer-events-auto">
-    <!-- Laser Web Mode -->
-    <button id="btnLaserMode" onclick="setMode('laser')" class="glass-btn active px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-      </svg>
-      <span>Laser Web</span>
-    </button>
-
-    <!-- Dimension Box Mode -->
-    <button id="btnDimensionMode" onclick="setMode('dimension')" class="glass-btn px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
-      </svg>
-      <span>Dimension Box</span>
-    </button>
-
-    <!-- Black Hole Mode -->
-    <button id="btnBlackHoleMode" onclick="setMode('blackhole')" class="glass-btn px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="9" stroke-width="2" stroke-dasharray="4 2"/>
-        <circle cx="12" cy="12" r="4" fill="currentColor"/>
-      </svg>
-      <span>Black Hole</span>
-    </button>
-
-    <!-- Filter Selector (Dimension Box Mode only) -->
-    <div id="filterDropdown" class="hidden border-l border-white/20 pl-3 my-0.5">
-      <select id="filterSelect" onchange="changeFilter(this.value)" class="bg-black/80 text-white text-xs rounded-lg border border-white/30 px-2 py-1.5 focus:outline-none focus:border-white">
-        <option value="0">👾 Pixel Matrix</option>
-        <option value="1">🌐 Cyan Outlines</option>
-        <option value="2">📺 80s VHS Synth</option>
-        <option value="3">🎨 Pop-Art Comic</option>
-        <option value="4">🎆 Neon Cyberpunk</option>
-        <option value="5">🔥 Thermal Heat</option>
-        <option value="6">⚡ Negative Invert</option>
-      </select>
-    </div>
+  <!-- UNHIDE HINT TOAST -->
+  <div id="unhideHint" class="absolute bottom-8 left-1/2 -translate-x-1/2 glass-panel px-4 py-2 rounded-full text-xs text-white/90 pointer-events-none opacity-0 transition-opacity duration-300 z-40 text-center shadow-2xl border border-white/20">
+    Tap anywhere on screen to show UI
   </div>
 
   <!-- APPLICATION SCRIPT -->
   <script>
     let currentMode = 'laser'; 
     let currentFilterIndex = 0;
+    let uiVisible = true;
     
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('arCanvas');
@@ -161,6 +186,8 @@
     const pinchBadge = document.getElementById('pinchBadge');
     const blackHoleHud = document.getElementById('blackHoleHud');
     const filterDropdown = document.getElementById('filterDropdown');
+    const uiContainer = document.getElementById('uiContainer');
+    const unhideHint = document.getElementById('unhideHint');
 
     let isProcessingFrame = false;
     let handResults = null;
@@ -196,6 +223,7 @@
       }
     }
 
+    // --- CAMERA & MEDIAPIPE ---
     async function initCameraAndMediaPipe() {
       const hands = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -245,7 +273,6 @@
 
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // Render base camera stream
       renderBaseVideoFrame();
 
       const numHands = handResults.multiHandLandmarks ? handResults.multiHandLandmarks.length : 0;
@@ -444,13 +471,13 @@
       }
     }
 
-    // --- 3. UPGRADED RELATIVISTIC BLACK HOLE ENGINE ---
+    // --- 3. RELATIVISTIC BLACK HOLE ENGINE ---
     function initBlackHoleParticles() {
       bhParticles = [];
       for (let i = 0; i < NUM_BH_PARTICLES; i++) {
         bhParticles.push({
           angle: Math.random() * Math.PI * 2,
-          radiusNorm: 0.8 + Math.random() * 2.5, // Ratio relative to Rs
+          radiusNorm: 0.8 + Math.random() * 2.5,
           speed: 0.02 + Math.random() * 0.04,
           size: 1 + Math.random() * 2.5,
           zDepth: (Math.random() - 0.5) * 0.4
@@ -467,10 +494,7 @@
         alpha: 1.0
       });
 
-      pinchBadge.textContent = "GRAVITATIONAL WAVE DISCHARGED";
-      pinchBadge.classList.remove('opacity-0');
-      pinchBadge.classList.add('opacity-100');
-      setTimeout(() => pinchBadge.classList.replace('opacity-100', 'opacity-0'), 1200);
+      showPinchBadge("GRAVITATIONAL WAVE DISCHARGED");
     }
 
     function renderBlackHoleMode(results) {
@@ -505,17 +529,14 @@
         hudGesture.textContent = "ORBITAL STANDBY";
       }
 
-      // Compute Hand velocity for spin calculation
       const dx = bhTargetPos.x - lastHandPos.x;
       const dy = bhTargetPos.y - lastHandPos.y;
       handVelocity = Math.min(1.0, Math.hypot(dx, dy) / 30);
       lastHandPos = { ...bhTargetPos };
 
-      // Smooth Easing Interpolation
       bhPos.x += (bhTargetPos.x - bhPos.x) * 0.14;
       bhPos.y += (bhTargetPos.y - bhPos.y) * 0.14;
 
-      // Physics Metrics Calculation
       const massValue = ((bhRadius / 100) ** 3).toFixed(2);
       const spinValue = (0.75 + handVelocity * 0.24).toFixed(2);
 
@@ -525,7 +546,6 @@
 
       ctx.save();
 
-      // A. Gravitational Wave Shockwaves
       for (let i = shockwaves.length - 1; i >= 0; i--) {
         const sw = shockwaves[i];
         sw.radius += 8;
@@ -545,7 +565,6 @@
         ctx.stroke();
       }
 
-      // B. Gravitational Lensing Distortion Lens (Spacetime Bending)
       ctx.save();
       ctx.beginPath();
       ctx.arc(bhPos.x, bhPos.y, bhRadius * 2.4, 0, Math.PI * 2);
@@ -554,8 +573,6 @@
       renderBaseVideoFrame();
       ctx.restore();
 
-      // C. Lensed Upper & Lower Accretion Disk Halo (Interstellar Gravitational Distortion)
-      // Lensed Back Arc (Warped Over top of singularity)
       ctx.beginPath();
       ctx.ellipse(bhPos.x, bhPos.y - bhRadius * 0.35, bhRadius * 1.55, bhRadius * 0.85, 0, Math.PI, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
@@ -564,7 +581,6 @@
       ctx.shadowBlur = 25;
       ctx.stroke();
 
-      // Lensed Back Arc (Warped Under bottom of singularity)
       ctx.beginPath();
       ctx.ellipse(bhPos.x, bhPos.y + bhRadius * 0.35, bhRadius * 1.55, bhRadius * 0.85, 0, 0, Math.PI);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
@@ -573,7 +589,6 @@
       ctx.shadowBlur = 20;
       ctx.stroke();
 
-      // D. Relativistic Polar Magnetic Hawking Jets
       const jetLength = bhRadius * 3.2;
       const jetGlow = ctx.createLinearGradient(bhPos.x, bhPos.y - jetLength, bhPos.x, bhPos.y + jetLength);
       jetGlow.addColorStop(0, 'rgba(255,255,255,0)');
@@ -591,11 +606,9 @@
       ctx.shadowBlur = 22;
       ctx.stroke();
 
-      // E. Keplerian Orbital Accretion Disk with Relativistic Doppler Beaming
       bhParticles.sort((a, b) => a.zDepth - b.zDepth);
 
       bhParticles.forEach((p) => {
-        // Keplerian Velocity ($v \propto 1/\sqrt{r}$)
         const orbitRadius = p.radiusNorm * bhRadius;
         const keplerSpeed = p.speed * Math.sqrt(bhRadius / orbitRadius);
         p.angle += keplerSpeed;
@@ -603,12 +616,10 @@
         const px = bhPos.x + Math.cos(p.angle) * orbitRadius;
         const py = bhPos.y + Math.sin(p.angle) * (orbitRadius * 0.3) + (p.zDepth * 15);
 
-        // Relativistic Doppler Beaming (Approaching side / left side is brighter)
-        const vX = -Math.sin(p.angle); // Velocity along line of sight
+        const vX = -Math.sin(p.angle);
         const dopplerFactor = 1 + vX * 0.55; 
         const alpha = Math.min(1.0, Math.max(0.15, p.zDepth > 0 ? dopplerFactor * 0.85 : dopplerFactor * 0.35));
 
-        // Spaghettification (Infalling Streaks near ISCO)
         if (p.radiusNorm < 1.1) {
           ctx.beginPath();
           ctx.moveTo(px, py);
@@ -626,7 +637,6 @@
         ctx.fill();
       });
 
-      // F. Double Photon Sphere Rings
       ctx.beginPath();
       ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.15, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
@@ -641,7 +651,6 @@
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // G. Event Horizon Shadow Threshold (Singularity Core)
       ctx.beginPath();
       ctx.arc(bhPos.x, bhPos.y, bhRadius, 0, Math.PI * 2);
       ctx.fillStyle = '#000000';
@@ -655,6 +664,7 @@
       ctx.restore();
     }
 
+    // --- HELPER GESTURES & UI CONTROLS ---
     function checkPinchGesture(results) {
       if (!results.multiHandLandmarks) return;
 
@@ -681,6 +691,7 @@
     }
 
     function showPinchBadge(text) {
+      if (!uiVisible) return;
       if (text) pinchBadge.textContent = text;
       pinchBadge.classList.remove('opacity-0');
       pinchBadge.classList.add('opacity-100');
@@ -688,6 +699,30 @@
         pinchBadge.classList.remove('opacity-100');
         pinchBadge.classList.add('opacity-0');
       }, 1200);
+    }
+
+    function toggleUi(show) {
+      uiVisible = (show !== undefined) ? show : !uiVisible;
+
+      if (uiVisible) {
+        uiContainer.classList.remove('opacity-0', 'pointer-events-none');
+        unhideHint.classList.remove('opacity-100');
+        unhideHint.classList.add('opacity-0');
+      } else {
+        uiContainer.classList.add('opacity-0', 'pointer-events-none');
+        unhideHint.classList.remove('opacity-0');
+        unhideHint.classList.add('opacity-100');
+        setTimeout(() => {
+          unhideHint.classList.remove('opacity-100');
+          unhideHint.classList.add('opacity-0');
+        }, 2200);
+      }
+    }
+
+    function handleCanvasClick() {
+      if (!uiVisible) {
+        toggleUi(true);
+      }
     }
 
     function drawHandSkeletons(results) {
