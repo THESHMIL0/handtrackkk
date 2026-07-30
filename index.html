@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-black text-white select-none overflow-hidden">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AR Spatial Vision & Singularity Suite</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- MediaPipe Hands & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    /* Monochrome Glassmorphism & Aesthetics */
+    .glass-panel {
+      background: rgba(10, 10, 10, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+    }
+    
+    .glass-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .glass-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      border-color: rgba(255, 255, 255, 0.5);
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+    }
+
+    .glass-btn.active {
+      background: #ffffff;
+      color: #000000;
+      border-color: #ffffff;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
+    }
+
+    .glow-text {
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
+    }
+
+    /* Hide Scrollbars */
+    ::-webkit-scrollbar { display: none; }
+    * { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="h-full w-full bg-black text-white relative font-mono overflow-hidden">
+
+  <!-- Live Video Feed (Hidden, processing frame canvas) -->
+  <video id="webcam" class="opacity-0 pointer-events-none absolute w-full h-full object-cover" playsinline webkit-playsinline></video>
+
+  <!-- AR Render Canvas -->
+  <canvas id="arCanvas" class="w-full h-full absolute inset-0 object-cover"></canvas>
+
+  <!-- TOP HUD OVERLAY -->
+  <div class="absolute top-4 left-4 right-4 flex justify-between items-start pointer-events-none z-20">
+    <!-- Diagnostics Readout -->
+    <div class="glass-panel rounded-xl p-3 flex flex-col gap-1.5 min-w-[200px]">
+      <div class="flex items-center justify-between text-xs tracking-wider border-b border-white/10 pb-1.5">
+        <span class="text-neutral-400">FPS</span>
+        <span id="hudFps" class="font-bold text-white glow-text">--</span>
+      </div>
+      <div class="flex items-center justify-between text-xs tracking-wider">
+        <span class="text-neutral-400">TRACKED HANDS</span>
+        <span id="hudHandCount" class="font-bold text-white">0</span>
+      </div>
+      <div class="flex items-center justify-between text-xs tracking-wider">
+        <span class="text-neutral-400">GESTURE</span>
+        <span id="hudGesture" class="font-bold text-neutral-300">SEARCHING...</span>
+      </div>
+    </div>
+
+    <!-- Black Hole Telemetry HUD (Shown when Black Hole mode active) -->
+    <div id="blackHoleHud" class="glass-panel rounded-xl p-3 flex-col gap-1.5 min-w-[220px] hidden">
+      <div class="text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
+        <span>SINGULARITY METRICS</span>
+        <span class="w-2 h-2 rounded-full bg-white animate-ping"></span>
+      </div>
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-neutral-400">MASS (M<sub>☉</sub>)</span>
+        <span id="bhMass" class="font-bold text-white">1.00 × 10⁶</span>
+      </div>
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-neutral-400">RADIUS (R<sub>s</sub>)</span>
+        <span id="bhRadius" class="font-bold text-white">120 px</span>
+      </div>
+      <div class="flex items-center justify-between text-xs">
+        <span class="text-neutral-400">LENS DEFLECTION</span>
+        <span id="bhDeflection" class="font-bold text-white">0.00°</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PINCH NOTIFICATION BADGE -->
+  <div id="pinchBadge" class="absolute top-20 left-1/2 -translate-x-1/2 glass-panel px-4 py-1.5 rounded-full text-xs tracking-widest uppercase opacity-0 transition-opacity duration-300 pointer-events-none z-30 font-semibold text-white border border-white/30">
+    FILTER CHANGED
+  </div>
+
+  <!-- BOTTOM CONTROL DOCK -->
+  <div class="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 p-2 glass-panel rounded-2xl pointer-events-auto">
+    <!-- Laser Web Mode -->
+    <button id="btnLaserMode" onclick="setMode('laser')" class="glass-btn active px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+      <span>Laser Web</span>
+    </button>
+
+    <!-- Dimension Box Mode -->
+    <button id="btnDimensionMode" onclick="setMode('dimension')" class="glass-btn px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+      </svg>
+      <span>Dimension Box</span>
+    </button>
+
+    <!-- Black Hole Mode -->
+    <button id="btnBlackHoleMode" onclick="setMode('blackhole')" class="glass-btn px-4 py-2.5 rounded-xl flex items-center gap-2 text-xs font-semibold uppercase tracking-wider">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" stroke-width="2" stroke-dasharray="4 2"/>
+        <circle cx="12" cy="12" r="4" fill="currentColor"/>
+      </svg>
+      <span>Black Hole</span>
+    </button>
+
+    <!-- Filter Selector (Dimension Box Mode only) -->
+    <div id="filterDropdown" class="hidden border-l border-white/20 pl-3 my-0.5">
+      <select id="filterSelect" onchange="changeFilter(this.value)" class="bg-black/80 text-white text-xs rounded-lg border border-white/30 px-2 py-1.5 focus:outline-none focus:border-white">
+        <option value="0">👾 Pixel Matrix</option>
+        <option value="1">🌐 Cyan Outlines</option>
+        <option value="2">📺 80s VHS Synth</option>
+        <option value="3">🎨 Pop-Art Comic</option>
+        <option value="4">🎆 Neon Cyberpunk</option>
+        <option value="5">🔥 Thermal Heat</option>
+        <option value="6">⚡ Negative Invert</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- APPLICATION SCRIPT -->
+  <script>
+    // --- GLOBAL STATE ---
+    let currentMode = 'laser'; // 'laser' | 'dimension' | 'blackhole'
+    let currentFilterIndex = 0;
+    
+    // DOM Elements
+    const videoElement = document.getElementById('webcam');
+    const canvasElement = document.getElementById('arCanvas');
+    const ctx = canvasElement.getContext('2d');
+    
+    // HUD Elements
+    const hudFps = document.getElementById('hudFps');
+    const hudHandCount = document.getElementById('hudHandCount');
+    const hudGesture = document.getElementById('hudGesture');
+    const pinchBadge = document.getElementById('pinchBadge');
+    const blackHoleHud = document.getElementById('blackHoleHud');
+    const filterDropdown = document.getElementById('filterDropdown');
+
+    // Tracking & Engine Variables
+    let isProcessingFrame = false;
+    let handResults = null;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let fps = 0;
+    let pinchCooldown = false;
+
+    // Black Hole Particle Engine
+    const NUM_BH_PARTICLES = 220;
+    let bhParticles = [];
+    let bhPos = { x: 0, y: 0 };
+    let bhRadius = 120;
+    let bhTargetPos = { x: 0, y: 0 };
+
+    // --- INITIALIZATION ---
+    window.addEventListener('load', () => {
+      setupCanvasSize();
+      initBlackHoleParticles();
+      initCameraAndMediaPipe();
+    });
+
+    window.addEventListener('resize', setupCanvasSize);
+
+    function setupCanvasSize() {
+      canvasElement.width = window.innerWidth;
+      canvasElement.height = window.innerHeight;
+      if (!bhPos.x && !bhPos.y) {
+        bhPos = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+        bhTargetPos = { ...bhPos };
+      }
+    }
+
+    // --- MEDIAPIPE & CAMERA SETUP ---
+    async function initCameraAndMediaPipe() {
+      const hands = new Hands({
+        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      });
+
+      hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.65,
+        minTrackingConfidence: 0.65
+      });
+
+      hands.onResults(onHandResults);
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user'
+          },
+          audio: false
+        });
+        
+        videoElement.srcObject = stream;
+        await videoElement.play();
+
+        const processVideoFrame = async () => {
+          if (!isProcessingFrame && videoElement.readyState >= 2) {
+            isProcessingFrame = true;
+            await hands.send({ image: videoElement });
+            isProcessingFrame = false;
+          }
+          requestAnimationFrame(processVideoFrame);
+        };
+
+        requestAnimationFrame(processVideoFrame);
+      } catch (err) {
+        console.error('Camera Access Error:', err);
+        alert('Webcam access is required for AR Hand Tracking.');
+      }
+    }
+
+    // --- HAND RESULTS CALLBACK ---
+    function onHandResults(results) {
+      handResults = results;
+      updateFpsCounter();
+
+      // Clear Canvas
+      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      // Render Video Frame
+      renderBaseVideoFrame();
+
+      const numHands = handResults.multiHandLandmarks ? handResults.multiHandLandmarks.length : 0;
+      hudHandCount.textContent = numHands;
+
+      // Check Pinch Gesture across hands
+      checkPinchGesture(handResults);
+
+      // Render Current Selected Mode
+      if (currentMode === 'laser') {
+        renderLaserMode(handResults);
+      } else if (currentMode === 'dimension') {
+        renderDimensionBoxMode(handResults);
+      } else if (currentMode === 'blackhole') {
+        renderBlackHoleMode(handResults);
+      }
+
+      // Draw Minimal Skeleton Overlay in non-BlackHole modes
+      if (currentMode !== 'blackhole' && numHands > 0) {
+        drawHandSkeletons(handResults);
+      }
+    }
+
+    // --- VIDEO RENDERING WITH ASPECT COVER ---
+    function renderBaseVideoFrame() {
+      if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) return;
+
+      const vWidth = videoElement.videoWidth;
+      const vHeight = videoElement.videoHeight;
+      const cWidth = canvasElement.width;
+      const cHeight = canvasElement.height;
+
+      const vAspect = vWidth / vHeight;
+      const cAspect = cWidth / cHeight;
+
+      let drawW, drawH, offsetX, offsetY;
+
+      if (cAspect > vAspect) {
+        drawW = cWidth;
+        drawH = cWidth / vAspect;
+        offsetX = 0;
+        offsetY = (cHeight - drawH) / 2;
+      } else {
+        drawH = cHeight;
+        drawW = cHeight * vAspect;
+        offsetX = (cWidth - drawW) / 2;
+        offsetY = 0;
+      }
+
+      ctx.save();
+      // Mirror Front Camera
+      ctx.translate(cWidth, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(videoElement, 0, 0, vWidth, vHeight, offsetX, offsetY, drawW, drawH);
+      ctx.restore();
+    }
+
+    // --- LANDMARK COORDINATE MAPPER ---
+    function mapLandmarkToScreen(landmark) {
+      const vWidth = videoElement.videoWidth || 1280;
+      const vHeight = videoElement.videoHeight || 720;
+      const cWidth = canvasElement.width;
+      const cHeight = canvasElement.height;
+
+      const vAspect = vWidth / vHeight;
+      const cAspect = cWidth / cHeight;
+
+      let drawW, drawH, offsetX, offsetY;
+
+      if (cAspect > vAspect) {
+        drawW = cWidth;
+        drawH = cWidth / vAspect;
+        offsetX = 0;
+        offsetY = (cHeight - drawH) / 2;
+      } else {
+        drawH = cHeight;
+        drawW = cHeight * vAspect;
+        offsetX = (cWidth - drawW) / 2;
+        offsetY = 0;
+      }
+
+      // Mirroring adjustment (x = 1 - landmark.x)
+      const mirroredX = (1 - landmark.x) * drawW + offsetX;
+      const mappedY = landmark.y * drawH + offsetY;
+
+      return { x: mirroredX, y: mappedY };
+    }
+
+    // --- 1. LASER WEB MODE ---
+    function renderLaserMode(results) {
+      hudGesture.textContent = results.multiHandLandmarks?.length ? "LASER ACTIVE" : "SEARCHING...";
+      if (!results.multiHandLandmarks) return;
+
+      const keypoints = [];
+
+      // Extract key points from each hand
+      results.multiHandLandmarks.forEach((landmarks) => {
+        const fingerTips = [4, 8, 12, 16, 20];
+        fingerTips.forEach(idx => {
+          keypoints.push(mapLandmarkToScreen(landmarks[idx]));
+        });
+      });
+
+      // Render Laser Web Connections
+      ctx.save();
+      for (let i = 0; i < keypoints.length; i++) {
+        for (let j = i + 1; j < keypoints.length; j++) {
+          const ptA = keypoints[i];
+          const ptB = keypoints[j];
+          const dist = Math.hypot(ptA.x - ptB.x, ptA.y - ptB.y);
+
+          if (dist < 320) {
+            const alpha = 1 - (dist / 320);
+            
+            // Core White Beam
+            ctx.beginPath();
+            ctx.moveTo(ptA.x, ptA.y);
+            ctx.lineTo(ptB.x, ptB.y);
+            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.lineWidth = 2;
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowBlur = 12;
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Render Finger Nodes
+      keypoints.forEach(pt => {
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 15;
+        ctx.fill();
+      });
+
+      ctx.restore();
+    }
+
+    // --- 2. DIMENSION BOX MODE ---
+    function renderDimensionBoxMode(results) {
+      hudGesture.textContent = "DIMENSION PORTAL";
+      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+
+      let p1, p2, p3, p4;
+
+      if (results.multiHandLandmarks.length >= 2) {
+        // Dual Hand Portal (Between Index & Thumbs)
+        const h1 = results.multiHandLandmarks[0];
+        const h2 = results.multiHandLandmarks[1];
+
+        p1 = mapLandmarkToScreen(h1[8]);  // Hand 1 Index
+        p2 = mapLandmarkToScreen(h2[8]);  // Hand 2 Index
+        p3 = mapLandmarkToScreen(h2[4]);  // Hand 2 Thumb
+        p4 = mapLandmarkToScreen(h1[4]);  // Hand 1 Thumb
+      } else {
+        // Single Hand Bounding Quad
+        const h = results.multiHandLandmarks[0];
+        p1 = mapLandmarkToScreen(h[8]);  // Index
+        p2 = mapLandmarkToScreen(h[12]); // Middle
+        p3 = mapLandmarkToScreen(h[20]); // Pinky
+        p4 = mapLandmarkToScreen(h[4]);  // Thumb
+      }
+
+      ctx.save();
+      // Quad Clipping Path
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.lineTo(p3.x, p3.y);
+      ctx.lineTo(p4.x, p4.y);
+      ctx.closePath();
+      
+      ctx.clip();
+
+      // Apply Visual Preset Filter within Portal
+      applyFilterPreset(currentFilterIndex);
+      
+      // Redraw video feed inside clipped portal
+      renderBaseVideoFrame();
+      ctx.restore();
+
+      // Draw Bounding Frame & Corner Nodes
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.lineTo(p3.x, p3.y);
+      ctx.lineTo(p4.x, p4.y);
+      ctx.closePath();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 16;
+      ctx.stroke();
+
+      [p1, p2, p3, p4].forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    function applyFilterPreset(index) {
+      switch (parseInt(index)) {
+        case 0: // Pixel Matrix
+          ctx.filter = 'contrast(180%) brightness(120%) grayscale(100%)';
+          break;
+        case 1: // Cyan Outlines
+          ctx.filter = 'drop-shadow(0px 0px 8px #00ffff) invert(100%)';
+          break;
+        case 2: // 80s VHS Synth
+          ctx.filter = 'contrast(200%) hue-rotate(90deg) saturate(300%)';
+          break;
+        case 3: // Pop-Art
+          ctx.filter = 'saturate(500%) contrast(150%)';
+          break;
+        case 4: // Neon Cyberpunk
+          ctx.filter = 'invert(85%) hue-rotate(180deg) brightness(130%)';
+          break;
+        case 5: // Thermal Heat
+          ctx.filter = 'invert(100%) hue-rotate(240deg) saturate(400%)';
+          break;
+        case 6: // Negative Invert
+          ctx.filter = 'invert(100%) grayscale(100%)';
+          break;
+        default:
+          ctx.filter = 'none';
+      }
+    }
+
+    // --- 3. BLACK HOLE SINGULARITY MODE ---
+    function initBlackHoleParticles() {
+      bhParticles = [];
+      for (let i = 0; i < NUM_BH_PARTICLES; i++) {
+        bhParticles.push({
+          angle: Math.random() * Math.PI * 2,
+          radius: 80 + Math.random() * 260,
+          speed: 0.015 + Math.random() * 0.035,
+          size: 1 + Math.random() * 2.5,
+          alpha: 0.3 + Math.random() * 0.7
+        });
+      }
+    }
+
+    function renderBlackHoleMode(results) {
+      const numHands = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+      
+      if (numHands === 2) {
+        // Position between both hands, Radius = Distance
+        const h1 = mapLandmarkToScreen(results.multiHandLandmarks[0][9]);
+        const h2 = mapLandmarkToScreen(results.multiHandLandmarks[1][9]);
+
+        bhTargetPos.x = (h1.x + h2.x) / 2;
+        bhTargetPos.y = (h1.y + h2.y) / 2;
+        
+        const dist = Math.hypot(h1.x - h2.x, h1.y - h2.y);
+        bhRadius = Math.max(50, Math.min(320, dist / 2));
+        hudGesture.textContent = "DUAL HAND CONTROL";
+      } else if (numHands === 1) {
+        // Single hand pinch spread controls radius
+        const hand = results.multiHandLandmarks[0];
+        const wrist = mapLandmarkToScreen(hand[0]);
+        const indexTip = mapLandmarkToScreen(hand[8]);
+        const thumbTip = mapLandmarkToScreen(hand[4]);
+
+        bhTargetPos.x = wrist.x;
+        bhTargetPos.y = wrist.y - 40;
+
+        const pinchDist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+        bhRadius = Math.max(60, Math.min(260, pinchDist * 1.8));
+        hudGesture.textContent = "SINGLE HAND CONTROL";
+      } else {
+        // Drift back to center standby
+        bhTargetPos.x = canvasElement.width / 2;
+        bhTargetPos.y = canvasElement.height / 2;
+        bhRadius = 100 + Math.sin(Date.now() * 0.002) * 15;
+        hudGesture.textContent = "STANDBY MODE";
+      }
+
+      // Smooth Easing Interpolation
+      bhPos.x += (bhTargetPos.x - bhPos.x) * 0.12;
+      bhPos.y += (bhTargetPos.y - bhPos.y) * 0.12;
+
+      // Update HUD Physics Telemetry
+      const massValue = ((bhRadius / 100) ** 3).toFixed(2);
+      const deflectionAngle = ((bhRadius / 100) * 1.42).toFixed(2);
+      document.getElementById('bhMass').innerHTML = `${massValue} × 10⁶`;
+      document.getElementById('bhRadius').textContent = `${Math.round(bhRadius)} px`;
+      document.getElementById('bhDeflection').textContent = `${deflectionAngle}°`;
+
+      ctx.save();
+
+      // A. Gravitational Lensing Radial Distortion
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(bhPos.x, bhPos.y, bhRadius * 2.2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.filter = `contrast(220%) brightness(80%) blur(2px)`;
+      renderBaseVideoFrame();
+      ctx.restore();
+
+      // B. Relativistic Hawking Jets
+      ctx.beginPath();
+      ctx.moveTo(bhPos.x, bhPos.y - bhRadius * 2.8);
+      ctx.lineTo(bhPos.x, bhPos.y + bhRadius * 2.8);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 20;
+      ctx.stroke();
+
+      // C. Keplerian Accretion Disk Particle System
+      bhParticles.forEach((p) => {
+        p.angle += p.speed * (120 / bhRadius);
+        const curR = p.radius * (bhRadius / 100);
+        
+        // Elliptical Accretion Disk tilt
+        const px = bhPos.x + Math.cos(p.angle) * curR;
+        const py = bhPos.y + Math.sin(p.angle) * (curR * 0.35);
+
+        ctx.beginPath();
+        ctx.arc(px, py, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${p.alpha})`;
+        ctx.shadowColor = '#ffffff';
+        ctx.shadowBlur = 8;
+        ctx.fill();
+      });
+
+      // D. Photon Ring Halo
+      ctx.beginPath();
+      ctx.arc(bhPos.x, bhPos.y, bhRadius * 1.12, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 25;
+      ctx.stroke();
+
+      // E. Event Horizon Schwarzschild Shadow (Pure Black Hole Singularity)
+      ctx.beginPath();
+      ctx.arc(bhPos.x, bhPos.y, bhRadius, 0, Math.PI * 2);
+      ctx.fillStyle = '#000000';
+      ctx.shadowColor = '#000000';
+      ctx.shadowBlur = 30;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // --- HELPER: PINCH GESTURE CYCLE ---
+    function checkPinchGesture(results) {
+      if (!results.multiHandLandmarks || currentMode !== 'dimension') return;
+
+      for (let landmarks of results.multiHandLandmarks) {
+        const indexTip = mapLandmarkToScreen(landmarks[8]);
+        const thumbTip = mapLandmarkToScreen(landmarks[4]);
+        const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
+
+        if (dist < 28 && !pinchCooldown) {
+          pinchCooldown = true;
+          currentFilterIndex = (currentFilterIndex + 1) % 7;
+          document.getElementById('filterSelect').value = currentFilterIndex;
+          
+          showPinchBadge();
+
+          setTimeout(() => { pinchCooldown = false; }, 800);
+          break;
+        }
+      }
+    }
+
+    function showPinchBadge() {
+      pinchBadge.classList.remove('opacity-0');
+      pinchBadge.classList.add('opacity-100');
+      setTimeout(() => {
+        pinchBadge.classList.remove('opacity-100');
+        pinchBadge.classList.add('opacity-0');
+      }, 1200);
+    }
+
+    // --- HELPER: MINIMAL SKELETON DRAW ---
+    function drawHandSkeletons(results) {
+      if (!results.multiHandLandmarks) return;
+
+      const connections = [
+        [0,1],[1,2],[2,3],[3,4],
+        [0,5],[5,6],[6,7],[7,8],
+        [5,9],[9,10],[10,11],[11,12],
+        [9,13],[13,14],[14,15],[15,16],
+        [13,17],[17,18],[18,19],[19,20],[0,17]
+      ];
+
+      ctx.save();
+      results.multiHandLandmarks.forEach(landmarks => {
+        const mapped = landmarks.map(mapLandmarkToScreen);
+
+        // Lines
+        ctx.beginPath();
+        connections.forEach(([i, j]) => {
+          ctx.moveTo(mapped[i].x, mapped[i].y);
+          ctx.lineTo(mapped[j].x, mapped[j].y);
+        });
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Keypoints
+        mapped.forEach(pt => {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        });
+      });
+      ctx.restore();
+    }
+
+    // --- HELPER: FPS COUNTER ---
+    function updateFpsCounter() {
+      const now = performance.now();
+      frameCount++;
+      if (now - lastTime >= 1000) {
+        fps = Math.round((frameCount * 1000) / (now - lastTime));
+        hudFps.textContent = fps;
+        frameCount = 0;
+        lastTime = now;
+      }
+    }
+
+    // --- UI CONTROLS & MODE SWITCHER ---
+    function setMode(mode) {
+      currentMode = mode;
+
+      document.getElementById('btnLaserMode').classList.toggle('active', mode === 'laser');
+      document.getElementById('btnDimensionMode').classList.toggle('active', mode === 'dimension');
+      document.getElementById('btnBlackHoleMode').classList.toggle('active', mode === 'blackhole');
+
+      filterDropdown.classList.toggle('hidden', mode !== 'dimension');
+      blackHoleHud.classList.toggle('hidden', mode !== 'blackhole');
+      blackHoleHud.classList.toggle('flex', mode === 'blackhole');
+    }
+
+    function changeFilter(val) {
+      currentFilterIndex = parseInt(val);
+      showPinchBadge();
+    }
+  </script>
+</body>
+</html>
