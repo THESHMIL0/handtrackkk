@@ -453,20 +453,21 @@
       const theme = state.themes[state.colorTheme];
       const handsScreen = landmarksList.map(hand => hand.map(mapLandmarkToScreen));
 
-      // Pinch Detection for Filter Switching (Thumb tip 4 to Index tip 8)
-      let handPinching = false;
-      let pinchPt = null;
+      // Primary tracking hand
+      const primaryHand = handsScreen[0];
+      const thumbTip = primaryHand[4]; // Thumb Tip
+      const indexTip = primaryHand[8]; // Index Tip
 
-      handsScreen.forEach(hand => {
-        const thumbTip = hand[4];
-        const indexTip = hand[8];
-        const dist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-        
-        if (dist < 38) {
-          handPinching = true;
-          pinchPt = { x: (thumbTip.x + indexTip.x) / 2, y: (thumbTip.y + indexTip.y) / 2 };
-        }
-      });
+      // Distance and Angle between Thumb and Index
+      const dx = indexTip.x - thumbTip.x;
+      const dy = indexTip.y - thumbTip.y;
+      const dist = Math.hypot(dx, dy);
+      const theta = Math.atan2(dy, dx); // Angle of hand rotation
+
+      // Pinch Detection for Filter Switching
+      let handPinching = dist < 38;
+      const cx = (thumbTip.x + indexTip.x) / 2;
+      const cy = (thumbTip.y + indexTip.y) / 2;
 
       // Single trigger transition (false -> true)
       if (handPinching && !state.boxPinchState) {
@@ -478,65 +479,39 @@
       }
 
       // Draw Pinch Pulse Marker
-      if (pinchPt) {
+      if (handPinching) {
         ctx.save();
         ctx.fillStyle = theme.main;
         ctx.shadowColor = theme.glow;
         ctx.shadowBlur = 15;
         ctx.beginPath();
-        ctx.arc(pinchPt.x, pinchPt.y, 10, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 10, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
 
-      // Compute Box Bounds anchored strictly between Thumb Tip (4) and Index Tip (8)
-      const boxPts = [];
-      handsScreen.forEach(hand => {
-        boxPts.push(hand[4]); // Thumb Tip
-        boxPts.push(hand[8]); // Index Tip
-      });
-
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      boxPts.forEach(pt => {
-        if (pt.x < minX) minX = pt.x;
-        if (pt.y < minY) minY = pt.y;
-        if (pt.x > maxX) maxX = pt.x;
-        if (pt.y > maxY) maxY = pt.y;
-      });
-
-      // Ensure minimum dimension for framing window so it stays legible on pinch
-      let w = maxX - minX;
-      let h = maxY - minY;
-      const minBoxSize = 80;
-
-      if (w < minBoxSize) {
-        const cx = (minX + maxX) / 2;
-        minX = cx - minBoxSize / 2;
-        maxX = cx + minBoxSize / 2;
-      }
-      if (h < minBoxSize) {
-        const cy = (minY + maxY) / 2;
-        minY = cy - minBoxSize / 2;
-        maxY = cy + minBoxSize / 2;
-      }
-
-      const padding = 15;
-      minX = Math.max(0, minX - padding);
-      minY = Math.max(0, minY - padding);
-      maxX = Math.min(state.canvas.width, maxX + padding);
-      maxY = Math.min(state.canvas.height, maxY + padding);
-
-      w = maxX - minX;
-      h = maxY - minY;
-      if (w <= 0 || h <= 0) return;
+      // Dynamic Oriented Dimensions based on finger distance
+      const minBoxW = 100;
+      const minBoxH = 80;
+      const w = Math.max(minBoxW, dist + 40);
+      const h = Math.max(minBoxH, dist * 0.75 + 20);
+      const hw = w / 2;
+      const hh = h / 2;
 
       const currentFilter = state.boxFilters[state.boxFilterIndex];
 
-      // 1. Render Filtered Video Segment inside Box
+      // 1. Render Filtered Video Segment inside Rotated Clipping Box
       ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(theta);
+
       ctx.beginPath();
-      ctx.rect(minX, minY, w, h);
+      ctx.rect(-hw, -hh, w, h);
       ctx.clip();
+
+      // Invert local transform to align screen-space background video inside rotated clip boundary
+      ctx.rotate(-theta);
+      ctx.translate(-cx, -cy);
 
       if (currentFilter.cssFilter) {
         ctx.filter = currentFilter.cssFilter;
@@ -550,50 +525,60 @@
       }
       ctx.restore();
 
-      // 2. Cyber Matrix Grid Overlay
+      // 2. Draw Rotated Cyber Grid & Holographic Brackets
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(theta);
+
+      // Cyber Matrix Grid Overlay
       ctx.save();
       ctx.beginPath();
-      ctx.rect(minX, minY, w, h);
+      ctx.rect(-hw, -hh, w, h);
       ctx.clip();
       ctx.strokeStyle = theme.main;
-      ctx.globalAlpha = 0.15;
+      ctx.globalAlpha = 0.2;
       ctx.lineWidth = 1;
-      const gridSize = 25;
-      for (let x = minX; x < maxX; x += gridSize) {
-        ctx.moveTo(x, minY); ctx.lineTo(x, maxY);
+      const gridSize = 20;
+      for (let x = -hw; x < hw; x += gridSize) {
+        ctx.moveTo(x, -hh); ctx.lineTo(x, hh);
       }
-      for (let y = minY; y < maxY; y += gridSize) {
-        ctx.moveTo(minX, y); ctx.lineTo(maxX, y);
+      for (let y = -hh; y < hh; y += gridSize) {
+        ctx.moveTo(-hw, y); ctx.lineTo(hw, y);
       }
       ctx.stroke();
       ctx.restore();
 
-      // 3. Draw Outer Holographic Brackets
+      // 3. Outer Frame & Corner Brackets
       ctx.strokeStyle = theme.main;
       ctx.lineWidth = 2;
       ctx.shadowColor = theme.glow;
       ctx.shadowBlur = 10;
-      ctx.strokeRect(minX, minY, w, h);
+      ctx.strokeRect(-hw, -hh, w, h);
 
-      const cornerLen = Math.min(w, h) * 0.15;
+      const cornerLen = Math.min(w, h) * 0.2;
       ctx.lineWidth = 4;
       ctx.beginPath();
-      ctx.moveTo(minX, minY + cornerLen); ctx.lineTo(minX, minY); ctx.lineTo(minX + cornerLen, minY);
-      ctx.moveTo(maxX - cornerLen, minY); ctx.lineTo(maxX, minY); ctx.lineTo(maxX, minY + cornerLen);
-      ctx.moveTo(maxX, maxY - cornerLen); ctx.lineTo(maxX, maxY); ctx.lineTo(maxX - cornerLen, maxY);
-      ctx.moveTo(minX + cornerLen, maxY); ctx.lineTo(minX, maxY); ctx.lineTo(minX, maxY - cornerLen);
+      // Top-Left
+      ctx.moveTo(-hw, -hh + cornerLen); ctx.lineTo(-hw, -hh); ctx.lineTo(-hw + cornerLen, -hh);
+      // Top-Right
+      ctx.moveTo(hw - cornerLen, -hh); ctx.lineTo(hw, -hh); ctx.lineTo(hw, -hh + cornerLen);
+      // Bottom-Right
+      ctx.moveTo(hw, hh - cornerLen); ctx.lineTo(hw, hh); ctx.lineTo(hw - cornerLen, hh);
+      // Bottom-Left
+      ctx.moveTo(-hw + cornerLen, hh); ctx.lineTo(-hw, hh); ctx.lineTo(-hw, hh - cornerLen);
       ctx.stroke();
 
-      // 4. Telemetry Header Readout
+      // 4. Rotating Telemetry Header Readout
       ctx.fillStyle = theme.main;
       ctx.font = 'bold 11px monospace';
-      ctx.fillText(`DIM: ${Math.round(w)}px x ${Math.round(h)}px | FILTER: ${currentFilter.name}`, minX + 8, minY - 8);
-      
+      ctx.fillText(`DIM: ${Math.round(w)}px x ${Math.round(h)}px | FILTER: ${currentFilter.name}`, -hw + 4, -hh - 8);
+
       if (state.boxPinchState) {
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(`[PINCH SWITCHED!]`, maxX - 120, minY - 8);
+        ctx.fillText(`[PINCH SWITCHED!]`, hw - 110, -hh - 8);
       }
 
+      ctx.restore();
       ctx.shadowBlur = 0;
     }
 
