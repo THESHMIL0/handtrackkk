@@ -46,7 +46,6 @@
       text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
     }
 
-    /* Mobile Safe Area */
     .pb-safe {
       padding-bottom: max(1rem, env(safe-area-inset-bottom));
     }
@@ -57,39 +56,18 @@
 </head>
 <body class="h-full w-full bg-black text-white relative font-mono overflow-hidden">
 
-  <!-- START / CAMERA PERMISSION OVERLAY -->
-  <div id="startOverlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl p-6 text-center transition-opacity duration-300">
-    <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-md w-full flex flex-col items-center gap-5 border border-white/20 shadow-2xl">
-      <div class="w-16 h-16 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_20px_rgba(0,243,255,0.3)]">
-        <svg class="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
-        </svg>
-      </div>
-
-      <div class="space-y-1">
-        <h1 class="text-xl sm:text-2xl font-bold tracking-wider text-white">AR SPATIAL VISION</h1>
-        <p class="text-xs text-neutral-400">Interactive Spatial Camera Suite</p>
-      </div>
-
-      <div id="cameraStatusMsg" class="text-xs text-neutral-300 bg-white/5 border border-white/10 rounded-xl p-3 w-full text-center leading-relaxed">
-        Click below to grant camera access and start the AR engine.
-      </div>
-
-      <button id="btnStartCamera" onclick="userInitiateCamera()" class="w-full py-3.5 px-6 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-95 text-black font-bold text-sm tracking-wider uppercase transition-all shadow-[0_0_25px_rgba(0,243,255,0.5)] cursor-pointer">
-        ⚡ Launch AR Camera
-      </button>
-
-      <div id="httpsWarning" class="hidden text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 w-full">
-        ⚠️ Camera requires an <b>HTTPS</b> connection (e.g. GitHub Pages). If on HTTP, please switch to HTTPS.
-      </div>
-    </div>
-  </div>
-
   <!-- Live Video Feed (Hidden processing source) -->
   <video id="webcam" class="opacity-0 pointer-events-none absolute w-full h-full object-cover" playsinline webkit-playsinline autoplay muted></video>
 
   <!-- AR Render Canvas -->
-  <canvas id="arCanvas" onclick="handleCanvasClick()" class="w-full h-full absolute inset-0 object-cover cursor-pointer"></canvas>
+  <canvas id="arCanvas" class="w-full h-full absolute inset-0 object-cover cursor-pointer"></canvas>
+
+  <!-- Error Banner (Hidden unless camera fails) -->
+  <div id="errorBanner" class="hidden absolute top-6 left-1/2 -translate-x-1/2 z-50 glass-panel rounded-2xl p-4 max-w-sm text-center border-red-500/50">
+    <div class="text-red-400 font-bold mb-1 text-sm">CAMERA ACCESS FAILED</div>
+    <div id="errorMessage" class="text-xs text-neutral-300 leading-relaxed mb-3">Please allow camera access in your browser site permissions and reload.</div>
+    <button onclick="location.reload()" class="glass-btn px-4 py-1.5 rounded-lg text-xs font-bold text-white uppercase">Retry</button>
+  </div>
 
   <!-- TOGGLEABLE UI CONTAINER -->
   <div id="uiContainer" class="transition-opacity duration-300">
@@ -97,7 +75,7 @@
     <!-- TOP HUD OVERLAY -->
     <div class="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 flex justify-between items-start pointer-events-none z-20">
       <!-- Diagnostics Readout -->
-      <div class="glass-panel rounded-xl p-2.5 sm:p-3 flex flex-col gap-1 min-w-[150px] sm:min-w-[180px]">
+      <div class="glass-panel rounded-xl p-2.5 sm:p-3 flex flex-col gap-1 min-w-[140px] sm:min-w-[170px]">
         <div class="flex items-center justify-between text-[10px] sm:text-xs tracking-wider border-b border-white/10 pb-1">
           <span class="text-neutral-400">FPS</span>
           <span id="hudFps" class="font-bold text-white glow-text">--</span>
@@ -108,12 +86,12 @@
         </div>
         <div class="flex items-center justify-between text-[10px] sm:text-xs tracking-wider">
           <span class="text-neutral-400">STATE</span>
-          <span id="hudGesture" class="font-bold text-neutral-300 truncate max-w-[90px] sm:max-w-none">SEARCHING...</span>
+          <span id="hudGesture" class="font-bold text-neutral-300 truncate max-w-[90px] sm:max-w-none">INITIALIZING...</span>
         </div>
       </div>
 
       <!-- Laser Telemetry HUD (Laser Web mode) -->
-      <div id="laserHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex flex-col gap-1 min-w-[160px] sm:min-w-[190px]">
+      <div id="laserHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex flex-col gap-1 min-w-[150px] sm:min-w-[180px]">
         <div class="text-[9px] sm:text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
           <span>LASER MATRIX</span>
           <span id="laserStatusDot" class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
@@ -126,914 +104,661 @@
           <span class="text-neutral-400">NODES</span>
           <span id="hudNodeCount" class="font-bold text-white">0</span>
         </div>
+      </div>
+
+      <!-- Dimension Box HUD -->
+      <div id="boxHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex-col gap-1 min-w-[150px] sm:min-w-[180px] hidden">
+        <div class="text-[9px] sm:text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
+          <span>WARP BOX</span>
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        </div>
         <div class="flex items-center justify-between text-[10px] sm:text-xs">
-          <span class="text-neutral-400">ENERGY</span>
-          <span id="hudEnergyPower" class="font-bold text-cyan-300">0.0 GW</span>
+          <span class="text-neutral-400">FILTER</span>
+          <span id="hudBoxFilter" class="font-bold text-emerald-300 truncate">THERMAL</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">TRIGGER</span>
+          <span class="font-bold text-white">PINCH 👌</span>
         </div>
       </div>
 
       <!-- Spatial Draw Telemetry HUD -->
-      <div id="drawHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex-col gap-1 min-w-[160px] sm:min-w-[190px] hidden">
+      <div id="drawHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex-col gap-1 min-w-[150px] sm:min-w-[180px] hidden">
         <div class="text-[9px] sm:text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
           <span>SPATIAL DRAW</span>
-          <span id="drawStatusDot" class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+          <span id="drawStatusDot" class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
         </div>
         <div class="flex items-center justify-between text-[10px] sm:text-xs">
           <span class="text-neutral-400">TOOL</span>
           <span id="hudDrawTool" class="font-bold text-amber-300">FREEHAND</span>
         </div>
         <div class="flex items-center justify-between text-[10px] sm:text-xs">
-          <span class="text-neutral-400">ACTION</span>
-          <span id="hudDrawAction" class="font-bold text-white">STANDBY</span>
+          <span class="text-neutral-400">STROKES</span>
+          <span id="hudStrokeCount" class="font-bold text-white">0</span>
         </div>
       </div>
-    </div>
-
-    <!-- NOTIFICATION BADGE -->
-    <div id="pinchBadge" class="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 glass-panel px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[10px] sm:text-xs tracking-widest uppercase opacity-0 transition-opacity duration-300 pointer-events-none z-30 font-semibold text-white border border-white/30 text-center whitespace-nowrap">
-      SETTINGS CHANGED
     </div>
 
     <!-- BOTTOM CONTROL DOCK -->
-    <div class="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 pb-safe pointer-events-auto">
-      <div class="flex items-center gap-2 p-1.5 glass-panel rounded-2xl max-w-[95vw] overflow-x-auto">
+    <div class="absolute bottom-4 left-0 right-0 z-30 flex flex-col items-center gap-2 pointer-events-auto pb-safe px-4">
+      
+      <!-- Spatial Draw Controls (Visible in Draw Mode) -->
+      <div id="drawControls" class="hidden flex items-center gap-2 mb-1">
+        <!-- Tool Switcher -->
+        <button id="btnToolSwitch" onclick="toggleDrawTool()" class="glass-btn px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 text-amber-300 border-amber-500/30">
+          <span id="toolIcon">✏️</span>
+          <span id="toolLabel">FREEHAND</span>
+        </button>
+        <!-- Clear Canvas -->
+        <button onclick="clearDrawings()" class="glass-btn px-3 py-1.5 rounded-xl text-xs font-bold text-red-400 border-red-500/30 flex items-center gap-1">
+          <span>🗑️</span> CLEAR
+        </button>
+      </div>
+
+      <!-- Main Dock Bar -->
+      <div class="glass-panel rounded-2xl p-1.5 sm:p-2 flex items-center gap-1.5 sm:gap-2 max-w-full overflow-x-auto">
         
-        <!-- Laser Web Mode -->
-        <button id="btnLaserMode" onclick="setMode('laser')" title="Laser Web Mode" aria-label="Laser Web Mode" class="glass-btn active w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
-          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-          </svg>
+        <!-- Mode 1: Laser Web -->
+        <button id="btnModeLaser" onclick="setMode('laser')" class="glass-btn active px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap">
+          <span>⚡</span>
+          <span class="hidden sm:inline">LASER</span> WEB
         </button>
 
-        <!-- Dimension Box Mode -->
-        <button id="btnDimensionMode" onclick="setMode('dimension')" title="Dimension Box Mode" aria-label="Dimension Box Mode" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
-          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
-          </svg>
+        <!-- Mode 2: Dimension Box -->
+        <button id="btnModeBox" onclick="setMode('box')" class="glass-btn px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap">
+          <span>📐</span>
+          <span class="hidden sm:inline">DIMENSION</span> BOX
         </button>
 
-        <!-- Spatial Draw Mode -->
-        <button id="btnDrawMode" onclick="setMode('draw')" title="Spatial Finger Draw Mode" aria-label="Spatial Draw Mode" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
-          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
-          </svg>
+        <!-- Mode 3: Spatial Draw -->
+        <button id="btnModeDraw" onclick="setMode('draw')" class="glass-btn px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 whitespace-nowrap">
+          <span>🎨</span>
+          <span class="hidden sm:inline">SPATIAL</span> DRAW
         </button>
 
-        <!-- Draw Tool Toggle Button: Freehand vs Straight Line (Draw Mode only) -->
-        <button id="btnDrawTool" onclick="toggleDrawTool()" title="Toggle Draw Tool (Freehand / Straight Line)" aria-label="Toggle Tool" class="hidden glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 text-amber-300">
-          <svg id="iconFreehand" class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-          </svg>
-          <svg id="iconStraightLine" class="w-5 h-5 sm:w-6 sm:h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20L20 4M4 20h6M4 20v-6M20 4h-6M20 4v6"/>
-          </svg>
+        <div class="w-px h-6 bg-white/10 mx-0.5"></div>
+
+        <!-- Color Selector -->
+        <select id="colorPalette" onchange="changeColorTheme(this.value)" class="glass-btn px-2 sm:px-3 py-2 rounded-xl text-xs font-bold text-white bg-black/50 outline-none border border-white/20 cursor-pointer">
+          <option value="cyan" class="bg-black text-cyan-400">Cyan</option>
+          <option value="magenta" class="bg-black text-fuchsia-400">Magenta</option>
+          <option value="emerald" class="bg-black text-emerald-400">Emerald</option>
+          <option value="gold" class="bg-black text-amber-400">Solar Gold</option>
+          <option value="white" class="bg-black text-white">Cyber White</option>
+        </select>
+
+        <!-- Hide HUD Toggle -->
+        <button onclick="toggleHud()" class="glass-btn p-2 rounded-xl text-xs font-bold text-neutral-300" title="Toggle HUD Display">
+          👁️
         </button>
-
-        <!-- Laser Color Palette Dropdown (Laser Mode only) -->
-        <div id="laserColorDropdown" class="border-l border-white/20 pl-2 my-0.5 shrink-0">
-          <select id="laserColorSelect" onchange="changeLaserColor(this.value)" class="bg-black/90 text-white text-[11px] sm:text-xs rounded-xl border border-white/30 px-2 py-2.5 h-11 sm:h-12 focus:outline-none focus:border-white max-w-[110px] sm:max-w-[140px]">
-            <option value="cyan">⚡ Cyan</option>
-            <option value="magenta">🔮 Magenta</option>
-            <option value="emerald">🟢 Emerald</option>
-            <option value="solar">☀️ Solar</option>
-            <option value="monochrome">⚪ Cyber White</option>
-          </select>
-        </div>
-
-        <!-- Draw Color Palette Dropdown (Draw Mode only) -->
-        <div id="drawColorDropdown" class="hidden border-l border-white/20 pl-2 my-0.5 shrink-0">
-          <select id="drawColorSelect" onchange="changeDrawColor(this.value)" class="bg-black/90 text-white text-[11px] sm:text-xs rounded-xl border border-white/30 px-2 py-2.5 h-11 sm:h-12 focus:outline-none focus:border-white max-w-[110px] sm:max-w-[140px]">
-            <option value="cyan">🎨 Cyan</option>
-            <option value="magenta">🔮 Magenta</option>
-            <option value="emerald">🟢 Emerald</option>
-            <option value="solar">☀️ Solar</option>
-            <option value="monochrome">⚪ White</option>
-          </select>
-        </div>
-
-        <!-- Clear Drawing Canvas Button (Draw Mode only) -->
-        <button id="btnClearDraw" onclick="clearDrawCanvas()" title="Clear All Drawings" aria-label="Clear Drawings" class="hidden glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 text-rose-400 hover:text-rose-300">
-          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-          </svg>
-        </button>
-
-        <!-- Filter Selector (Dimension Box Mode only) -->
-        <div id="filterDropdown" class="hidden border-l border-white/20 pl-2 my-0.5 shrink-0">
-          <select id="filterSelect" onchange="changeFilter(this.value)" class="bg-black/90 text-white text-[11px] sm:text-xs rounded-xl border border-white/30 px-2 py-2.5 h-11 sm:h-12 focus:outline-none focus:border-white max-w-[110px] sm:max-w-[140px]">
-            <option value="0">👾 Pixel</option>
-            <option value="1">🌐 Cyan</option>
-            <option value="2">📺 80s VHS</option>
-            <option value="3">🎨 Pop-Art</option>
-            <option value="4">🎆 Neon</option>
-            <option value="5">🔥 Thermal</option>
-            <option value="6">⚡ Negative</option>
-          </select>
-        </div>
-
-        <!-- Vertical Divider -->
-        <div class="w-px h-6 bg-white/20 my-auto shrink-0"></div>
-
-        <!-- Camera / Invisible UI Button -->
-        <button id="btnToggleUi" onclick="toggleUi(false)" title="Hide UI (Camera View)" aria-label="Hide UI" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
-          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h3.28a1 1 0 00.948-.684l1.498-4.493A1 1 0 0111.672 1h0.656a1 1 0 01.948.684l1.498 4.493A1 1 0 0015.72 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-            <circle cx="12" cy="13" r="3" stroke-width="2" />
-          </svg>
-        </button>
-
       </div>
     </div>
-
   </div>
 
-  <!-- UNHIDE HINT TOAST -->
-  <div id="unhideHint" class="absolute bottom-8 left-1/2 -translate-x-1/2 glass-panel px-4 py-2 rounded-full text-xs text-white/90 pointer-events-none opacity-0 transition-opacity duration-300 z-40 text-center shadow-2xl border border-white/20">
-    Tap anywhere on screen to show UI
-  </div>
-
-  <!-- APPLICATION SCRIPT -->
   <script>
-    let currentMode = 'laser'; // 'laser' | 'dimension' | 'draw'
-    let currentFilterIndex = 0;
-    let laserColorTheme = 'cyan';
-    let drawColorTheme = 'cyan';
-    let drawToolMode = 'freehand'; // 'freehand' | 'line'
-    let uiVisible = true;
-    
-    // Cached Viewport Transformation for 60 FPS Projection
-    let viewTransform = { drawW: 0, drawH: 0, offsetX: 0, offsetY: 0 };
-    
-    // Spatial Draw Offscreen Buffer & State
-    const drawCanvas = document.createElement('canvas');
-    const drawCtx = drawCanvas.getContext('2d');
-    let lastDrawPoints = {}; 
-    let lineStartPoints = {}; 
-    let lastLineEndPoints = {}; 
-    
-    const videoElement = document.getElementById('webcam');
-    const canvasElement = document.getElementById('arCanvas');
-    const ctx = canvasElement.getContext('2d');
-    
-    const hudFps = document.getElementById('hudFps');
-    const hudTrackLabel = document.getElementById('hudTrackLabel');
-    const hudHandCount = document.getElementById('hudHandCount');
-    const hudGesture = document.getElementById('hudGesture');
-    const hudBeamCount = document.getElementById('hudBeamCount');
-    const hudNodeCount = document.getElementById('hudNodeCount');
-    const hudEnergyPower = document.getElementById('hudEnergyPower');
-    const hudDrawAction = document.getElementById('hudDrawAction');
-    const hudDrawTool = document.getElementById('hudDrawTool');
-    
-    const laserStatusDot = document.getElementById('laserStatusDot');
-    const drawStatusDot = document.getElementById('drawStatusDot');
-    
-    const pinchBadge = document.getElementById('pinchBadge');
-    const filterDropdown = document.getElementById('filterDropdown');
-    const laserColorDropdown = document.getElementById('laserColorDropdown');
-    const drawColorDropdown = document.getElementById('drawColorDropdown');
-    const btnClearDraw = document.getElementById('btnClearDraw');
-    const btnDrawTool = document.getElementById('btnDrawTool');
-    const iconFreehand = document.getElementById('iconFreehand');
-    const iconStraightLine = document.getElementById('iconStraightLine');
-    const uiContainer = document.getElementById('uiContainer');
-    const unhideHint = document.getElementById('unhideHint');
+    // Global Application State
+    const state = {
+      activeMode: 'laser', // 'laser', 'box', 'draw'
+      colorTheme: 'cyan',
+      drawTool: 'freehand', // 'freehand', 'line'
+      hudVisible: true,
+      
+      // Box Filter Settings
+      boxFilterIndex: 0,
+      boxPinchState: false,
+      boxFilters: [
+        { name: 'THERMAL', cssFilter: 'invert(100%) hue-rotate(180deg) saturate(300%)' },
+        { name: 'CYBER MATRIX', cssFilter: 'hue-rotate(90deg) contrast(160%) brightness(1.2)' },
+        { name: 'NIGHT VISION', cssFilter: 'brightness(1.2) contrast(180%) sepia(100%) hue-rotate(70deg) saturate(500%)' },
+        { name: 'X-RAY INVERT', cssFilter: 'invert(100%) contrast(150%)' },
+        { name: 'SOLAR GLOW', cssFilter: 'contrast(150%) sepia(100%) hue-rotate(320deg) saturate(400%)' },
+        { name: 'MONOCHROME', cssFilter: 'grayscale(100%) contrast(200%)' }
+      ],
 
-    let isProcessingFrame = false;
-    let isProcessingLoopStarted = false;
-    let handResults = null;
-    let handEngine = null;
-    
-    let lastTime = performance.now();
-    let frameCount = 0;
-    let fps = 0;
+      // Tracking Diagnostics
+      fps: 0,
+      frameCount: 0,
+      lastFpsUpdate: performance.now(),
+      handCount: 0,
+      gestureState: 'INITIALIZING...',
+      
+      // Theme Palette RGB Definitions
+      themes: {
+        cyan:    { main: '#00f3ff', rgb: [0, 243, 255], glow: 'rgba(0,243,255,0.8)' },
+        magenta: { main: '#ff0055', rgb: [255, 0, 85],   glow: 'rgba(255,0,85,0.8)' },
+        emerald: { main: '#00ff66', rgb: [0, 255, 102], glow: 'rgba(0,255,102,0.8)' },
+        gold:    { main: '#ffaa00', rgb: [255, 170, 0], glow: 'rgba(255,170,0,0.8)' },
+        white:   { main: '#ffffff', rgb: [255, 255, 255], glow: 'rgba(255,255,255,0.8)' }
+      },
 
-    // Color Schemas
-    const COLOR_THEMES = {
-      cyan: { primary: '#00f3ff', secondary: 'rgba(0, 243, 255, 0.4)', particle: '#70f8ff' },
-      magenta: { primary: '#ff00d0', secondary: 'rgba(255, 0, 208, 0.4)', particle: '#ff7bf1' },
-      emerald: { primary: '#00ff66', secondary: 'rgba(0, 255, 102, 0.4)', particle: '#80ffb2' },
-      solar: { primary: '#ffaa00', secondary: 'rgba(255, 170, 0, 0.4)', particle: '#ffd175' },
-      monochrome: { primary: '#ffffff', secondary: 'rgba(255, 255, 255, 0.3)', particle: '#ffffff' }
+      // Drawing Storage
+      strokes: [], // Completed paths
+      currentStroke: null, // Active freehand line
+      activeLinePreview: null, // Rubber-band line start point
+
+      // MediaPipe & Canvas setup
+      hands: null,
+      video: null,
+      canvas: null,
+      ctx: null,
+      lastResults: null,
+      
+      // Pre-calculated transform bounds
+      viewTransform: { scale: 1, offsetX: 0, offsetY: 0, videoW: 640, videoH: 480 }
     };
 
-    window.addEventListener('load', () => {
-      setupCanvasSize();
-      checkSecurityContext();
-      requestAnimationFrame(mainRenderLoop);
-    });
-
-    window.addEventListener('resize', () => {
-      setupCanvasSize();
-      updateViewTransform();
-    });
-
-    // Auto-resume camera stream if user switches tabs and returns
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && videoElement.srcObject) {
-        videoElement.play().catch(e => console.log("Auto-play resume suppressed:", e));
-      }
-    });
-
-    function setupCanvasSize() {
-      canvasElement.width = window.innerWidth;
-      canvasElement.height = window.innerHeight;
-      drawCanvas.width = window.innerWidth;
-      drawCanvas.height = window.innerHeight;
-      updateViewTransform();
-    }
-
-    function checkSecurityContext() {
-      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-        const httpsWarn = document.getElementById('httpsWarning');
-        if (httpsWarn) httpsWarn.classList.remove('hidden');
-      }
-    }
-
-    async function userInitiateCamera() {
-      const btn = document.getElementById('btnStartCamera');
-      const statusMsg = document.getElementById('cameraStatusMsg');
-      
-      btn.disabled = true;
-      btn.textContent = "INITIALIZING...";
-      statusMsg.textContent = "Requesting camera permissions...";
-
-      try {
-        const success = await initCameraAndMediaPipe(statusMsg);
-        if (success) {
-          const overlay = document.getElementById('startOverlay');
-          overlay.classList.add('opacity-0', 'pointer-events-none');
-          setTimeout(() => overlay.remove(), 350);
-        } else {
-          btn.disabled = false;
-          btn.textContent = "🔄 RETRY CAMERA ACCESS";
-        }
-      } catch (err) {
-        console.error("Camera setup failed:", err);
-        statusMsg.innerHTML = "❌ <b>Camera Exception:</b> " + (err.message || err);
-        btn.disabled = false;
-        btn.textContent = "🔄 RETRY CAMERA ACCESS";
-      }
-    }
-
-    async function initCameraAndMediaPipe(statusMsg) {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        statusMsg.innerHTML = "❌ <b>Camera API Not Supported</b><br>Your browser or current connection (e.g. HTTP instead of HTTPS) blocks camera access.";
-        return false;
-      }
-
-      // Stage 1: Request Camera Stream directly first so permission dialog opens immediately
-      let stream = null;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
-        });
-      } catch (e1) {
-        console.warn("Preferred camera constraint failed, using generic fallback...", e1);
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        } catch (e2) {
-          console.error("Camera Access Error:", e2);
-          if (e2.name === 'NotAllowedError' || e2.name === 'PermissionDeniedError') {
-            statusMsg.innerHTML = "❌ <b>Camera Permission Denied</b><br>Please click the lock icon 🔒 in your browser address bar, allow Camera access, and refresh.";
-          } else if (e2.name === 'NotFoundError' || e2.name === 'DevicesNotFoundError') {
-            statusMsg.innerHTML = "❌ <b>No Camera Detected</b><br>Please connect a webcam or camera device.";
-          } else {
-            statusMsg.innerHTML = `❌ <b>Camera Access Error:</b> ${e2.message || e2.name}`;
-          }
-          return false;
-        }
-      }
-
-      // Attach stream to video element
-      try {
-        videoElement.srcObject = stream;
-        await videoElement.play();
-        updateViewTransform();
-      } catch (playErr) {
-        console.error("Video play error:", playErr);
-        statusMsg.innerHTML = "❌ Failed to start video playback. Tap retry.";
-        return false;
-      }
-
-      // Stage 2: Initialize MediaPipe Hands Engine in background
-      if (!handEngine) {
-        try {
-          handEngine = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-          });
-          handEngine.setOptions({
-            maxNumHands: 2,
-            modelComplexity: 0,
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-          });
-          handEngine.onResults(onHandResults);
-        } catch (err) {
-          console.error("MediaPipe Hands Init Warning:", err);
-        }
-      }
-
-      // Stage 3: Start downsampled WASM processing loop
-      if (!isProcessingLoopStarted) {
-        isProcessingLoopStarted = true;
-        const procCanvas = document.createElement('canvas');
-        procCanvas.width = 360;
-        procCanvas.height = 270;
-        const procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
-
-        const processVideoFrame = async () => {
-          if (!isProcessingFrame && videoElement.readyState >= 2 && handEngine) {
-            isProcessingFrame = true;
-            try {
-              procCtx.drawImage(videoElement, 0, 0, 360, 270);
-              await handEngine.send({ image: procCanvas });
-            } catch (e) {
-              // Frame drop resilience
-            }
-            isProcessingFrame = false;
-          }
-          requestAnimationFrame(processVideoFrame);
-        };
-
-        requestAnimationFrame(processVideoFrame);
-      }
-
-      return true;
-    }
-
-    function onHandResults(results) {
-      handResults = results;
-    }
-
-    function updateViewTransform() {
-      if (!videoElement.videoWidth || !videoElement.videoHeight) return;
-      const canvasW = canvasElement.width;
-      const canvasH = canvasElement.height;
-      const videoAspect = videoElement.videoWidth / videoElement.videoHeight;
-      const canvasAspect = canvasW / canvasH;
-
-      if (canvasAspect > videoAspect) {
-        viewTransform.drawW = canvasW;
-        viewTransform.drawH = canvasW / videoAspect;
-        viewTransform.offsetX = 0;
-        viewTransform.offsetY = (canvasH - viewTransform.drawH) / 2;
-      } else {
-        viewTransform.drawH = canvasH;
-        viewTransform.drawW = canvasH * videoAspect;
-        viewTransform.offsetX = (canvasW - viewTransform.drawW) / 2;
-        viewTransform.offsetY = 0;
-      }
-    }
-
+    // Fast Landmark-to-Screen Mapping
     function mapLandmarkToScreen(landmark) {
-      if (!viewTransform.drawW) updateViewTransform();
-      return {
-        x: (1 - landmark.x) * viewTransform.drawW + viewTransform.offsetX,
-        y: landmark.y * viewTransform.drawH + viewTransform.offsetY
-      };
+      const { scale, offsetX, offsetY } = state.viewTransform;
+      const mirroredX = 1 - landmark.x;
+      const x = mirroredX * state.viewTransform.videoW * scale + offsetX;
+      const y = landmark.y * state.viewTransform.videoH * scale + offsetY;
+      return { x, y, z: landmark.z };
     }
 
-    function mainRenderLoop() {
-      updateFpsCounter();
+    // Resize & Cached Projection Matrix
+    function updateCanvasSize() {
+      if (!state.canvas) return;
+      state.canvas.width = window.innerWidth;
+      state.canvas.height = window.innerHeight;
 
-      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      if (state.video && state.video.videoWidth) {
+        const vw = state.video.videoWidth;
+        const vh = state.video.videoHeight;
+        const screenW = state.canvas.width;
+        const screenH = state.canvas.height;
 
-      // 1. Render live camera frame
-      renderBaseVideoFrame();
+        const scale = Math.max(screenW / vw, screenH / vh);
+        const offsetX = (screenW - vw * scale) / 2;
+        const offsetY = (screenH - vh * scale) / 2;
 
-      // 2. Mode-dependent AR Overlays
-      hudTrackLabel.textContent = "HANDS";
-      if (handResults) {
-        const numHands = handResults.multiHandLandmarks ? handResults.multiHandLandmarks.length : 0;
-        hudHandCount.textContent = numHands;
-
-        if (currentMode === 'laser') {
-          renderLaserMode(handResults);
-        } else if (currentMode === 'dimension') {
-          renderDimensionBoxMode(handResults);
-        } else if (currentMode === 'draw') {
-          renderSpatialDrawMode(handResults);
-        }
-
-        if (numHands > 0 && currentMode !== 'draw') {
-          drawHandSkeletons(handResults);
-        }
-      } else if (currentMode === 'draw') {
-        ctx.drawImage(drawCanvas, 0, 0);
+        state.viewTransform = { scale, offsetX, offsetY, videoW: vw, videoH: vh };
       }
-
-      requestAnimationFrame(mainRenderLoop);
     }
 
-    function renderBaseVideoFrame() {
-      if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) return;
-      if (!viewTransform.drawW) updateViewTransform();
+    // Direct Camera Startup Procedure
+    async function initCameraAndMediaPipe() {
+      state.canvas = document.getElementById('arCanvas');
+      state.ctx = state.canvas.getContext('2d');
+      state.video = document.getElementById('webcam');
 
-      ctx.save();
-      ctx.translate(canvasElement.width, 0);
-      ctx.scale(-1, 1);
-      ctx.drawImage(
-        videoElement, 
-        0, 0, videoElement.videoWidth, videoElement.videoHeight, 
-        viewTransform.offsetX, viewTransform.offsetY, viewTransform.drawW, viewTransform.drawH
-      );
-      ctx.restore();
-    }
+      window.addEventListener('resize', updateCanvasSize);
 
-    function renderLaserMode(results) {
-      const numHands = results.multiHandLandmarks?.length || 0;
-      hudGesture.textContent = numHands > 0 ? "LASER MATRIX ACTIVE" : "SEARCHING...";
+      // 1. Request Camera Permission Immediately
+      try {
+        let stream;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: false
+          });
+        } catch (e) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
 
-      if (!results.multiHandLandmarks || numHands === 0) {
-        hudBeamCount.textContent = '0';
-        hudNodeCount.textContent = '0';
-        hudEnergyPower.textContent = '0.0 GW';
+        state.video.srcObject = stream;
+        await state.video.play();
+        updateCanvasSize();
+
+        // Start Canvas Render Animation Loop Immediately
+        requestAnimationFrame(renderLoop);
+
+      } catch (err) {
+        console.error("Camera Access Error:", err);
+        const banner = document.getElementById('errorBanner');
+        const msg = document.getElementById('errorMessage');
+        banner.classList.remove('hidden');
+        msg.innerText = "Camera access was denied or unhandled. Please grant camera permission in your site settings.";
         return;
       }
 
-      const theme = COLOR_THEMES[laserColorTheme] || COLOR_THEMES.cyan;
-      const time = performance.now() * 0.005;
-
-      const landmarkIndices = [0, 4, 8, 12, 16, 20, 9];
-      const handsData = results.multiHandLandmarks.map(landmarks => {
-        const mapped = {};
-        landmarkIndices.forEach(idx => {
-          mapped[idx] = mapLandmarkToScreen(landmarks[idx]);
-        });
-        return mapped;
-      });
-
-      let activeBeams = 0;
-      let totalNodes = 0;
-      const pulsePoints = [];
-
-      ctx.save();
-
-      // Intra-hand structured web
-      handsData.forEach((hand) => {
-        totalNodes += landmarkIndices.length;
-        const ring = [4, 8, 12, 16, 20, 0, 4];
-        const spokes = [0, 4, 8, 12, 16, 20];
-        const palmPt = hand[9];
-
-        ctx.beginPath();
-        for (let r = 0; r < ring.length - 1; r++) {
-          const ptA = hand[ring[r]];
-          const ptB = hand[ring[r+1]];
-          ctx.moveTo(ptA.x, ptA.y);
-          ctx.lineTo(ptB.x, ptB.y);
-          activeBeams++;
-        }
-        spokes.forEach(spokeIdx => {
-          const ptB = hand[spokeIdx];
-          ctx.moveTo(palmPt.x, palmPt.y);
-          ctx.lineTo(ptB.x, ptB.y);
-          activeBeams++;
+      // 2. Initialize MediaPipe Hands
+      try {
+        state.hands = new Hands({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
         });
 
-        ctx.strokeStyle = theme.secondary;
-        ctx.lineWidth = 3.5;
-        ctx.stroke();
-
-        ctx.beginPath();
-        for (let r = 0; r < ring.length - 1; r++) {
-          const ptA = hand[ring[r]];
-          const ptB = hand[ring[r+1]];
-          ctx.moveTo(ptA.x, ptA.y);
-          ctx.lineTo(ptB.x, ptB.y);
-        }
-        spokes.forEach(spokeIdx => {
-          const ptB = hand[spokeIdx];
-          ctx.moveTo(palmPt.x, palmPt.y);
-          ctx.lineTo(ptB.x, ptB.y);
+        state.hands.setOptions({
+          maxNumHands: 2,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5
         });
-        ctx.strokeStyle = theme.primary;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      });
 
-      // Inter-hand parallel bridges (Orderly Finger-to-Finger Lattice)
-      if (handsData.length >= 2) {
-        const handA = handsData[0];
-        const handB = handsData[1];
+        state.hands.onResults(onHandResults);
 
-        const bridgeConnections = [
-          [0, 0], [4, 4], [8, 8], [12, 12], [16, 16], [20, 20], [9, 9]
-        ];
+        // Low-latency WASM tracking buffer
+        const processCanvas = document.createElement('canvas');
+        processCanvas.width = 360;
+        processCanvas.height = 270;
+        const processCtx = processCanvas.getContext('2d');
 
-        ctx.beginPath();
-        bridgeConnections.forEach(([idxA, idxB], pairIdx) => {
-          const ptA = handA[idxA];
-          const ptB = handB[idxB];
-          ctx.moveTo(ptA.x, ptA.y);
-          ctx.lineTo(ptB.x, ptB.y);
-          activeBeams++;
-
-          const pulsePos = (Math.sin(time * 1.5 + pairIdx) + 1) * 0.5;
-          const px = ptA.x + (ptB.x - ptA.x) * pulsePos;
-          const py = ptA.y + (ptB.y - ptA.y) * pulsePos;
-          pulsePoints.push({ x: px, y: py });
-        });
-        ctx.strokeStyle = theme.secondary;
-        ctx.lineWidth = 4;
-        ctx.stroke();
-
-        ctx.beginPath();
-        bridgeConnections.forEach(([idxA, idxB]) => {
-          const ptA = handA[idxA];
-          const ptB = handB[idxB];
-          ctx.moveTo(ptA.x, ptA.y);
-          ctx.lineTo(ptB.x, ptB.y);
-        });
-        ctx.strokeStyle = theme.primary;
-        ctx.lineWidth = 1.8;
-        ctx.stroke();
-      }
-
-      // Traveling Energy Pulses
-      if (pulsePoints.length > 0) {
-        ctx.beginPath();
-        for (let k = 0; k < pulsePoints.length; k++) {
-          ctx.moveTo(pulsePoints[k].x + 3, pulsePoints[k].y);
-          ctx.arc(pulsePoints[k].x, pulsePoints[k].y, 3, 0, Math.PI * 2);
-        }
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-      }
-
-      // Hand Nodes
-      ctx.beginPath();
-      handsData.forEach(hand => {
-        landmarkIndices.forEach(idx => {
-          const pt = hand[idx];
-          ctx.moveTo(pt.x + 5, pt.y);
-          ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
-        });
-      });
-      ctx.fillStyle = theme.primary;
-      ctx.fill();
-
-      ctx.restore();
-
-      hudBeamCount.textContent = activeBeams;
-      hudNodeCount.textContent = totalNodes;
-      hudEnergyPower.textContent = `${(activeBeams * 0.42).toFixed(1)} GW`;
-    }
-
-    function renderDimensionBoxMode(results) {
-      hudGesture.textContent = "DIMENSION PORTAL";
-      if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
-
-      let p1, p2, p3, p4;
-
-      if (results.multiHandLandmarks.length >= 2) {
-        const h1 = results.multiHandLandmarks[0];
-        const h2 = results.multiHandLandmarks[1];
-
-        p1 = mapLandmarkToScreen(h1[8]);
-        p2 = mapLandmarkToScreen(h2[8]);
-        p3 = mapLandmarkToScreen(h2[4]);
-        p4 = mapLandmarkToScreen(h1[4]);
-      } else {
-        const h = results.multiHandLandmarks[0];
-        p1 = mapLandmarkToScreen(h[8]);
-        p2 = mapLandmarkToScreen(h[12]);
-        p3 = mapLandmarkToScreen(h[20]);
-        p4 = mapLandmarkToScreen(h[4]);
-      }
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.lineTo(p4.x, p4.y);
-      ctx.closePath();
-      
-      ctx.clip();
-      applyFilterPreset(currentFilterIndex);
-      renderBaseVideoFrame();
-      ctx.restore();
-
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.lineTo(p4.x, p4.y);
-      ctx.closePath();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-
-      [p1, p2, p3, p4].forEach(p => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-        ctx.fillStyle = '#ffffff';
-        ctx.fill();
-      });
-      ctx.restore();
-    }
-
-    function detectHandGesture(landmarks) {
-      const wrist = landmarks[0];
-      const getDist = (pt) => Math.hypot(pt.x - wrist.x, pt.y - wrist.y, pt.z - wrist.z);
-      const mcpBase = getDist(landmarks[9]);
-
-      const isExtended = (tipIdx) => getDist(landmarks[tipIdx]) > mcpBase * 1.15;
-
-      const indexExt = isExtended(8);
-      const middleExt = isExtended(12);
-      const ringExt = isExtended(16);
-      const pinkyExt = isExtended(20);
-
-      if (indexExt && !middleExt && !ringExt && !pinkyExt) return 'point';
-      if (indexExt && middleExt && ringExt && pinkyExt) return 'palm';
-      return 'neutral';
-    }
-
-    function renderSpatialDrawMode(results) {
-      const theme = COLOR_THEMES[drawColorTheme] || COLOR_THEMES.cyan;
-      const numHands = results.multiHandLandmarks?.length || 0;
-      let currentAction = "STANDBY";
-
-      if (results.multiHandLandmarks && numHands > 0) {
-        results.multiHandLandmarks.forEach((landmarks, handIdx) => {
-          const gesture = detectHandGesture(landmarks);
-          const indexTip = mapLandmarkToScreen(landmarks[8]);
-          const palmCenter = mapLandmarkToScreen(landmarks[9]);
-
-          if (gesture === 'point') {
-            currentAction = drawToolMode === 'line' ? "📏 STRAIGHT LINE" : "👉 DRAWING";
-            
-            if (drawToolMode === 'freehand') {
-              const lastPt = lastDrawPoints[handIdx];
-              if (lastPt) {
-                drawCtx.save();
-                drawCtx.beginPath();
-                drawCtx.moveTo(lastPt.x, lastPt.y);
-                drawCtx.lineTo(indexTip.x, indexTip.y);
-                drawCtx.strokeStyle = theme.primary;
-                drawCtx.lineWidth = 6;
-                drawCtx.lineCap = 'round';
-                drawCtx.lineJoin = 'round';
-                drawCtx.shadowColor = theme.primary;
-                drawCtx.shadowBlur = 10;
-                drawCtx.stroke();
-                drawCtx.restore();
-              }
-              lastDrawPoints[handIdx] = indexTip;
-
-            } else if (drawToolMode === 'line') {
-              if (!lineStartPoints[handIdx]) lineStartPoints[handIdx] = indexTip;
-
-              ctx.save();
-              ctx.beginPath();
-              ctx.moveTo(lineStartPoints[handIdx].x, lineStartPoints[handIdx].y);
-              ctx.lineTo(indexTip.x, indexTip.y);
-              ctx.strokeStyle = theme.primary;
-              ctx.lineWidth = 6;
-              ctx.setLineDash([10, 6]);
-              ctx.stroke();
-
-              ctx.beginPath();
-              ctx.arc(lineStartPoints[handIdx].x, lineStartPoints[handIdx].y, 6, 0, Math.PI * 2);
-              ctx.arc(indexTip.x, indexTip.y, 6, 0, Math.PI * 2);
-              ctx.fillStyle = '#ffffff';
-              ctx.fill();
-              ctx.restore();
-
-              lastLineEndPoints[handIdx] = indexTip;
-            }
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(indexTip.x, indexTip.y, 8, 0, Math.PI * 2);
-            ctx.fillStyle = theme.primary;
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(indexTip.x, indexTip.y, 14, 0, Math.PI * 2);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.restore();
-
-          } else if (gesture === 'palm') {
-            currentAction = "✋ ERASING";
-            commitPendingLine(handIdx, theme);
-            lastDrawPoints[handIdx] = null;
-
-            const eraserRadius = 55;
-            drawCtx.save();
-            drawCtx.globalCompositeOperation = 'destination-out';
-            drawCtx.beginPath();
-            drawCtx.arc(palmCenter.x, palmCenter.y, eraserRadius, 0, Math.PI * 2);
-            drawCtx.fill();
-            drawCtx.restore();
-
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(palmCenter.x, palmCenter.y, eraserRadius, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255, 80, 100, 0.8)';
-            ctx.lineWidth = 2.5;
-            ctx.setLineDash([8, 6]);
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.arc(palmCenter.x, palmCenter.y, eraserRadius * 0.85, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 50, 80, 0.15)';
-            ctx.fill();
-            ctx.restore();
-
-          } else {
-            commitPendingLine(handIdx, theme);
-            lastDrawPoints[handIdx] = null;
+        const processFrame = async () => {
+          if (state.video && state.video.readyState >= 2) {
+            processCtx.drawImage(state.video, 0, 0, 360, 270);
+            await state.hands.send({ image: processCanvas });
           }
-        });
+          requestAnimationFrame(processFrame);
+        };
+        requestAnimationFrame(processFrame);
+
+      } catch (err) {
+        console.error("MediaPipe Init Error:", err);
+      }
+    }
+
+    // MediaPipe Hand Results Callback
+    function onHandResults(results) {
+      state.lastResults = results;
+      state.handCount = results.multiHandLandmarks ? results.multiHandLandmarks.length : 0;
+      
+      document.getElementById('hudHandCount').innerText = state.handCount;
+      if (state.handCount === 0) {
+        state.gestureState = 'SEARCHING...';
+      } else if (state.handCount === 1) {
+        state.gestureState = 'SINGLE HAND';
       } else {
-        Object.keys(lineStartPoints).forEach(handIdx => commitPendingLine(handIdx, theme));
-        lastDrawPoints = {};
+        state.gestureState = 'DUAL LINKED';
       }
-
-      hudGesture.textContent = numHands > 0 ? currentAction : "SEARCHING...";
-      hudDrawAction.textContent = currentAction;
-      ctx.drawImage(drawCanvas, 0, 0);
+      document.getElementById('hudGesture').innerText = state.gestureState;
     }
 
-    function commitPendingLine(handIdx, theme) {
-      if (lineStartPoints[handIdx] && lastLineEndPoints[handIdx]) {
-        drawCtx.save();
-        drawCtx.beginPath();
-        drawCtx.moveTo(lineStartPoints[handIdx].x, lineStartPoints[handIdx].y);
-        drawCtx.lineTo(lastLineEndPoints[handIdx].x, lastLineEndPoints[handIdx].y);
-        drawCtx.strokeStyle = theme.primary;
-        drawCtx.lineWidth = 6;
-        drawCtx.lineCap = 'round';
-        drawCtx.shadowColor = theme.primary;
-        drawCtx.shadowBlur = 10;
-        drawCtx.stroke();
-        drawCtx.restore();
+    // Mode 1: Orderly Laser Web Renderer
+    function renderLaserWeb(landmarksList) {
+      if (landmarksList.length === 0) return;
 
-        lineStartPoints[handIdx] = null;
-        lastLineEndPoints[handIdx] = null;
-      }
-    }
+      const ctx = state.ctx;
+      const theme = state.themes[state.colorTheme];
+      let beamCount = 0;
+      let nodeCount = 0;
 
-    function applyFilterPreset(index) {
-      switch (parseInt(index)) {
-        case 0: ctx.filter = 'contrast(180%) brightness(120%) grayscale(100%)'; break;
-        case 1: ctx.filter = 'invert(100%)'; break;
-        case 2: ctx.filter = 'contrast(200%) hue-rotate(90deg) saturate(300%)'; break;
-        case 3: ctx.filter = 'saturate(500%) contrast(150%)'; break;
-        case 4: ctx.filter = 'invert(85%) hue-rotate(180deg) brightness(130%)'; break;
-        case 5: ctx.filter = 'invert(100%) hue-rotate(240deg) saturate(400%)'; break;
-        case 6: ctx.filter = 'invert(100%) grayscale(100%)'; break;
-        default: ctx.filter = 'none';
-      }
-    }
+      const fingerTips = [4, 8, 12, 16, 20];
+      const handsScreen = landmarksList.map(hand => hand.map(mapLandmarkToScreen));
 
-    function showToast(text) {
-      if (!uiVisible) return;
-      if (text) pinchBadge.textContent = text;
-      pinchBadge.classList.remove('opacity-0');
-      pinchBadge.classList.add('opacity-100');
-      setTimeout(() => {
-        pinchBadge.classList.remove('opacity-100');
-        pinchBadge.classList.add('opacity-0');
-      }, 1200);
-    }
+      ctx.strokeStyle = theme.main;
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = theme.glow;
+      ctx.shadowBlur = 8;
 
-    function toggleUi(show) {
-      uiVisible = (show !== undefined) ? show : !uiVisible;
-
-      if (uiVisible) {
-        uiContainer.classList.remove('opacity-0', 'pointer-events-none');
-        unhideHint.classList.remove('opacity-100');
-        unhideHint.classList.add('opacity-0');
-      } else {
-        uiContainer.classList.add('opacity-0', 'pointer-events-none');
-        unhideHint.classList.remove('opacity-0');
-        unhideHint.classList.add('opacity-100');
-        setTimeout(() => {
-          unhideHint.classList.remove('opacity-100');
-          unhideHint.classList.add('opacity-0');
-        }, 2200);
-      }
-    }
-
-    function handleCanvasClick() {
-      if (!uiVisible) {
-        toggleUi(true);
-      }
-    }
-
-    function drawHandSkeletons(results) {
-      if (!results.multiHandLandmarks) return;
-
-      const connections = [
-        [0,1],[1,2],[2,3],[3,4],
-        [0,5],[5,6],[6,7],[7,8],
-        [5,9],[9,10],[10,11],[11,12],
-        [9,13],[13,14],[14,15],[15,16],
-        [13,17],[17,18],[18,19],[19,20],[0,17]
-      ];
-
-      ctx.save();
-      ctx.strokeStyle = laserColorTheme === 'monochrome' ? 'rgba(255, 255, 255, 0.3)' : COLOR_THEMES[laserColorTheme]?.secondary || 'rgba(255, 255, 255, 0.3)';
-      ctx.lineWidth = 1.2;
-
-      ctx.beginPath();
-      results.multiHandLandmarks.forEach(landmarks => {
-        const mapped = landmarks.map(mapLandmarkToScreen);
-        connections.forEach(([i, j]) => {
-          ctx.moveTo(mapped[i].x, mapped[i].y);
-          ctx.lineTo(mapped[j].x, mapped[j].y);
+      // Intra-Hand Perimeter & Palm Spokes
+      handsScreen.forEach(hand => {
+        ctx.beginPath();
+        fingerTips.forEach((tipIdx, i) => {
+          const pt = hand[tipIdx];
+          if (i === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+          nodeCount++;
         });
+        ctx.closePath();
+        ctx.stroke();
+
+        const wrist = hand[0];
+        ctx.beginPath();
+        fingerTips.forEach(tipIdx => {
+          const tip = hand[tipIdx];
+          ctx.moveTo(wrist.x, wrist.y);
+          ctx.lineTo(tip.x, tip.y);
+          beamCount++;
+        });
+        ctx.stroke();
       });
+
+      // Dual-Hand Parallel Ribbon Beams
+      if (handsScreen.length >= 2) {
+        const h1 = handsScreen[0];
+        const h2 = handsScreen[1];
+
+        ctx.strokeStyle = theme.main;
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 12;
+
+        ctx.beginPath();
+        fingerTips.forEach(tipIdx => {
+          const p1 = h1[tipIdx];
+          const p2 = h2[tipIdx];
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          beamCount++;
+        });
+
+        for (let i = 0; i < fingerTips.length - 1; i++) {
+          const p1 = h1[fingerTips[i]];
+          const p2 = h2[fingerTips[i + 1]];
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          beamCount++;
+        }
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        fingerTips.forEach(tipIdx => {
+          [h1[tipIdx], h2[tipIdx]].forEach(pt => {
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        });
+      }
+
+      ctx.shadowBlur = 0;
+      document.getElementById('hudBeamCount').innerText = beamCount;
+      document.getElementById('hudNodeCount').innerText = nodeCount;
+    }
+
+    // Mode 2: Dimension Box & Pinch Filter Switcher
+    function renderDimensionBox(landmarksList) {
+      if (landmarksList.length < 1) return;
+
+      const ctx = state.ctx;
+      const theme = state.themes[state.colorTheme];
+      const handsScreen = landmarksList.map(hand => hand.map(mapLandmarkToScreen));
+
+      // Pinch Detection for Filter Switching (Thumb tip 4 to Index tip 8)
+      let handPinching = false;
+      let pinchPt = null;
+
+      handsScreen.forEach(hand => {
+        const thumbTip = hand[4];
+        const indexTip = hand[8];
+        const dist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+        
+        if (dist < 38) {
+          handPinching = true;
+          pinchPt = { x: (thumbTip.x + indexTip.x) / 2, y: (thumbTip.y + indexTip.y) / 2 };
+        }
+      });
+
+      // Single trigger transition (false -> true)
+      if (handPinching && !state.boxPinchState) {
+        state.boxPinchState = true;
+        state.boxFilterIndex = (state.boxFilterIndex + 1) % state.boxFilters.length;
+        document.getElementById('hudBoxFilter').innerText = state.boxFilters[state.boxFilterIndex].name;
+      } else if (!handPinching) {
+        state.boxPinchState = false;
+      }
+
+      // Draw Pinch Pulse Marker
+      if (pinchPt) {
+        ctx.save();
+        ctx.fillStyle = theme.main;
+        ctx.shadowColor = theme.glow;
+        ctx.shadowBlur = 15;
+        ctx.beginPath();
+        ctx.arc(pinchPt.x, pinchPt.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Compute Box Bounds across all points
+      const allPts = handsScreen.flat();
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      allPts.forEach(pt => {
+        if (pt.x < minX) minX = pt.x;
+        if (pt.y < minY) minY = pt.y;
+        if (pt.x > maxX) maxX = pt.x;
+        if (pt.y > maxY) maxY = pt.y;
+      });
+
+      const padding = 25;
+      minX = Math.max(0, minX - padding);
+      minY = Math.max(0, minY - padding);
+      maxX = Math.min(state.canvas.width, maxX + padding);
+      maxY = Math.min(state.canvas.height, maxY + padding);
+
+      const w = maxX - minX;
+      const h = maxY - minY;
+      if (w <= 0 || h <= 0) return;
+
+      const currentFilter = state.boxFilters[state.boxFilterIndex];
+
+      // 1. Render Filtered Video Segment inside Box
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(minX, minY, w, h);
+      ctx.clip();
+
+      if (currentFilter.cssFilter) {
+        ctx.filter = currentFilter.cssFilter;
+      }
+
+      ctx.translate(state.canvas.width, 0);
+      ctx.scale(-1, 1);
+      const { scale, offsetX, offsetY } = state.viewTransform;
+      if (state.video && state.video.videoWidth) {
+        ctx.drawImage(state.video, offsetX, offsetY, state.viewTransform.videoW * scale, state.viewTransform.videoH * scale);
+      }
+      ctx.restore();
+
+      // 2. Cyber Matrix Grid Overlay
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(minX, minY, w, h);
+      ctx.clip();
+      ctx.strokeStyle = theme.main;
+      ctx.globalAlpha = 0.15;
+      ctx.lineWidth = 1;
+      const gridSize = 25;
+      for (let x = minX; x < maxX; x += gridSize) {
+        ctx.moveTo(x, minY); ctx.lineTo(x, maxY);
+      }
+      for (let y = minY; y < maxY; y += gridSize) {
+        ctx.moveTo(minX, y); ctx.lineTo(maxX, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // 3. Draw Outer Holographic Brackets
+      ctx.strokeStyle = theme.main;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = theme.glow;
+      ctx.shadowBlur = 10;
+      ctx.strokeRect(minX, minY, w, h);
+
+      const cornerLen = Math.min(w, h) * 0.15;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(minX, minY + cornerLen); ctx.lineTo(minX, minY); ctx.lineTo(minX + cornerLen, minY);
+      ctx.moveTo(maxX - cornerLen, minY); ctx.lineTo(maxX, minY); ctx.lineTo(maxX, minY + cornerLen);
+      ctx.moveTo(maxX, maxY - cornerLen); ctx.lineTo(maxX, maxY); ctx.lineTo(maxX - cornerLen, maxY);
+      ctx.moveTo(minX + cornerLen, maxY); ctx.lineTo(minX, maxY); ctx.lineTo(minX, maxY - cornerLen);
       ctx.stroke();
 
-      ctx.beginPath();
-      ctx.fillStyle = '#ffffff';
-      results.multiHandLandmarks.forEach(landmarks => {
-        const mapped = landmarks.map(mapLandmarkToScreen);
-        mapped.forEach(pt => {
-          ctx.moveTo(pt.x + 2, pt.y);
-          ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
-        });
-      });
-      ctx.fill();
+      // 4. Telemetry Header Readout
+      ctx.fillStyle = theme.main;
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(`DIM: ${Math.round(w)}px x ${Math.round(h)}px | FILTER: ${currentFilter.name}`, minX + 8, minY - 8);
+      
+      if (state.boxPinchState) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(`[PINCH SWITCHED!]`, maxX - 120, minY - 8);
+      }
 
-      ctx.restore();
+      ctx.shadowBlur = 0;
     }
 
-    function updateFpsCounter() {
-      const now = performance.now();
-      frameCount++;
-      if (now - lastTime >= 1000) {
-        fps = Math.round((frameCount * 1000) / (now - lastTime));
-        hudFps.textContent = fps;
-        frameCount = 0;
-        lastTime = now;
+    // Mode 3: Spatial Draw & Palm Eraser Logic
+    function processSpatialDraw(landmarksList) {
+      if (landmarksList.length === 0) return;
+
+      const hand = landmarksList[0].map(mapLandmarkToScreen);
+      const indexTip = hand[8];
+      const indexPip = hand[6];
+      const middleTip = hand[12];
+      const ringTip = hand[16];
+      const pinkyTip = hand[20];
+      const wrist = hand[0];
+
+      const isPointing = (indexTip.y < indexPip.y) && (middleTip.y > wrist.y - 100) && (ringTip.y > wrist.y - 100);
+      const isOpenPalm = (indexTip.y < wrist.y) && (middleTip.y < wrist.y) && (ringTip.y < wrist.y) && (pinkyTip.y < wrist.y);
+
+      if (isOpenPalm) {
+        const palmCenter = hand[9];
+        const eraseRadius = 45;
+
+        state.ctx.strokeStyle = '#ff3344';
+        state.ctx.lineWidth = 2;
+        state.ctx.beginPath();
+        state.ctx.arc(palmCenter.x, palmCenter.y, eraseRadius, 0, Math.PI * 2);
+        state.ctx.stroke();
+
+        state.strokes = state.strokes.filter(stroke => {
+          return !stroke.points.some(pt => Math.hypot(pt.x - palmCenter.x, pt.y - palmCenter.y) < eraseRadius);
+        });
+
+      } else if (isPointing) {
+        if (state.drawTool === 'freehand') {
+          if (!state.currentStroke) {
+            state.currentStroke = { color: state.colorTheme, points: [] };
+            state.strokes.push(state.currentStroke);
+          }
+          state.currentStroke.points.push({ x: indexTip.x, y: indexTip.y });
+        } else if (state.drawTool === 'line') {
+          if (!state.activeLinePreview) {
+            state.activeLinePreview = { startX: indexTip.x, startY: indexTip.y };
+          }
+          state.activeLinePreview.endX = indexTip.x;
+          state.activeLinePreview.endY = indexTip.y;
+        }
+
+        state.ctx.fillStyle = state.themes[state.colorTheme].main;
+        state.ctx.beginPath();
+        state.ctx.arc(indexTip.x, indexTip.y, 6, 0, Math.PI * 2);
+        state.ctx.fill();
+
+      } else {
+        if (state.activeLinePreview) {
+          state.strokes.push({
+            color: state.colorTheme,
+            points: [
+              { x: state.activeLinePreview.startX, y: state.activeLinePreview.startY },
+              { x: state.activeLinePreview.endX, y: state.activeLinePreview.endY }
+            ]
+          });
+          state.activeLinePreview = null;
+        }
+        state.currentStroke = null;
       }
     }
 
+    // Render Saved Spatial Drawings
+    function renderDrawings() {
+      const ctx = state.ctx;
+
+      state.strokes.forEach(stroke => {
+        if (stroke.points.length < 2) return;
+        const theme = state.themes[stroke.color] || state.themes.cyan;
+
+        ctx.strokeStyle = theme.main;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.shadowColor = theme.glow;
+        ctx.shadowBlur = 8;
+
+        ctx.beginPath();
+        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for (let i = 1; i < stroke.points.length; i++) {
+          ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+        }
+        ctx.stroke();
+      });
+
+      if (state.activeLinePreview) {
+        const theme = state.themes[state.colorTheme];
+        ctx.strokeStyle = theme.main;
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 6]);
+        ctx.beginPath();
+        ctx.moveTo(state.activeLinePreview.startX, state.activeLinePreview.startY);
+        ctx.lineTo(state.activeLinePreview.endX, state.activeLinePreview.endY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.shadowBlur = 0;
+      document.getElementById('hudStrokeCount').innerText = state.strokes.length;
+    }
+
+    // Main 60 FPS Canvas Render Loop
+    function renderLoop(now) {
+      const ctx = state.ctx;
+      const canvas = state.canvas;
+
+      state.frameCount++;
+      if (now - state.lastFpsUpdate >= 1000) {
+        state.fps = state.frameCount;
+        state.frameCount = 0;
+        state.lastFpsUpdate = now;
+        document.getElementById('hudFps').innerText = state.fps;
+      }
+
+      // Draw Mirrored Video Feed
+      ctx.save();
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      
+      const { scale, offsetX, offsetY } = state.viewTransform;
+      if (state.video && state.video.videoWidth) {
+        ctx.drawImage(state.video, offsetX, offsetY, state.viewTransform.videoW * scale, state.viewTransform.videoH * scale);
+      }
+      ctx.restore();
+
+      // Render Active AR Layer
+      const landmarksList = state.lastResults && state.lastResults.multiHandLandmarks ? state.lastResults.multiHandLandmarks : [];
+
+      if (state.activeMode === 'laser') {
+        renderLaserWeb(landmarksList);
+      } else if (state.activeMode === 'box') {
+        renderDimensionBox(landmarksList);
+      } else if (state.activeMode === 'draw') {
+        processSpatialDraw(landmarksList);
+      }
+
+      renderDrawings();
+      requestAnimationFrame(renderLoop);
+    }
+
+    // Controls
     function setMode(mode) {
-      currentMode = mode;
+      state.activeMode = mode;
 
-      document.getElementById('btnLaserMode').classList.toggle('active', mode === 'laser');
-      document.getElementById('btnDimensionMode').classList.toggle('active', mode === 'dimension');
-      document.getElementById('btnDrawMode').classList.toggle('active', mode === 'draw');
-
-      filterDropdown.classList.toggle('hidden', mode !== 'dimension');
-      laserColorDropdown.classList.toggle('hidden', mode !== 'laser');
-      drawColorDropdown.classList.toggle('hidden', mode !== 'draw');
-
-      btnClearDraw.classList.toggle('hidden', mode !== 'draw');
-      btnDrawTool.classList.toggle('hidden', mode !== 'draw');
+      document.getElementById('btnModeLaser').classList.toggle('active', mode === 'laser');
+      document.getElementById('btnModeBox').classList.toggle('active', mode === 'box');
+      document.getElementById('btnModeDraw').classList.toggle('active', mode === 'draw');
 
       document.getElementById('laserHud').classList.toggle('hidden', mode !== 'laser');
-
+      document.getElementById('boxHud').classList.toggle('hidden', mode !== 'box');
       document.getElementById('drawHud').classList.toggle('hidden', mode !== 'draw');
-      document.getElementById('drawHud').classList.toggle('flex', mode === 'draw');
+      document.getElementById('drawControls').classList.toggle('hidden', mode !== 'draw');
+    }
 
-      showToast(`MODE: ${mode.toUpperCase()}`);
+    function changeColorTheme(color) {
+      state.colorTheme = color;
     }
 
     function toggleDrawTool() {
-      drawToolMode = drawToolMode === 'freehand' ? 'line' : 'freehand';
-      iconFreehand.classList.toggle('hidden', drawToolMode !== 'freehand');
-      iconStraightLine.classList.toggle('hidden', drawToolMode !== 'line');
-      hudDrawTool.textContent = drawToolMode.toUpperCase();
-      showToast(`TOOL: ${drawToolMode.toUpperCase()}`);
+      state.drawTool = state.drawTool === 'freehand' ? 'line' : 'freehand';
+      document.getElementById('toolLabel').innerText = state.drawTool.toUpperCase();
+      document.getElementById('toolIcon').innerText = state.drawTool === 'freehand' ? '✏️' : '📏';
+      document.getElementById('hudDrawTool').innerText = state.drawTool.toUpperCase();
     }
 
-    function changeFilter(val) {
-      currentFilterIndex = parseInt(val);
-      showToast("FILTER CHANGED");
+    function clearDrawings() {
+      state.strokes = [];
+      state.activeLinePreview = null;
+      state.currentStroke = null;
     }
 
-    function changeLaserColor(color) {
-      laserColorTheme = color;
-      const theme = COLOR_THEMES[color] || COLOR_THEMES.cyan;
-      laserStatusDot.style.backgroundColor = theme.primary;
-      showToast(`LASER: ${color.toUpperCase()}`);
+    function toggleHud() {
+      state.hudVisible = !state.hudVisible;
+      document.getElementById('uiContainer').style.opacity = state.hudVisible ? '1' : '0';
     }
 
-    function changeDrawColor(color) {
-      drawColorTheme = color;
-      const theme = COLOR_THEMES[color] || COLOR_THEMES.cyan;
-      drawStatusDot.style.backgroundColor = theme.primary;
-      showToast(`BRUSH: ${color.toUpperCase()}`);
-    }
-
-    function clearDrawCanvas() {
-      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
-      lineStartPoints = {};
-      lastLineEndPoints = {};
-      showToast("CANVAS CLEARED");
-    }
+    // Auto-launch Camera on Load
+    window.addEventListener('load', () => {
+      initCameraAndMediaPipe();
+    });
   </script>
 </body>
 </html>
