@@ -57,6 +57,34 @@
 </head>
 <body class="h-full w-full bg-black text-white relative font-mono overflow-hidden">
 
+  <!-- START / CAMERA PERMISSION OVERLAY -->
+  <div id="startOverlay" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-xl p-6 text-center transition-opacity duration-300">
+    <div class="glass-panel p-6 sm:p-8 rounded-3xl max-w-md w-full flex flex-col items-center gap-5 border border-white/20 shadow-2xl">
+      <div class="w-16 h-16 rounded-2xl bg-cyan-500/20 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_20px_rgba(0,243,255,0.3)]">
+        <svg class="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+        </svg>
+      </div>
+
+      <div class="space-y-1">
+        <h1 class="text-xl sm:text-2xl font-bold tracking-wider text-white">AR SPATIAL VISION</h1>
+        <p class="text-xs text-neutral-400">Interactive Spatial Camera Suite</p>
+      </div>
+
+      <div id="cameraStatusMsg" class="text-xs text-neutral-300 bg-white/5 border border-white/10 rounded-xl p-3 w-full text-center leading-relaxed">
+        Click below to grant camera access and start the AR engine.
+      </div>
+
+      <button id="btnStartCamera" onclick="userInitiateCamera()" class="w-full py-3.5 px-6 rounded-xl bg-cyan-500 hover:bg-cyan-400 active:scale-95 text-black font-bold text-sm tracking-wider uppercase transition-all shadow-[0_0_25px_rgba(0,243,255,0.5)] cursor-pointer">
+        ⚡ Launch AR Camera
+      </button>
+
+      <div id="httpsWarning" class="hidden text-[11px] text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl p-2.5 w-full">
+        ⚠️ Camera requires an <b>HTTPS</b> connection (e.g. GitHub Pages). If on HTTP, please switch to HTTPS.
+      </div>
+    </div>
+  </div>
+
   <!-- Live Video Feed (Hidden processing source) -->
   <video id="webcam" class="opacity-0 pointer-events-none absolute w-full h-full object-cover" playsinline webkit-playsinline autoplay muted></video>
 
@@ -294,7 +322,7 @@
 
     window.addEventListener('load', () => {
       setupCanvasSize();
-      initCameraAndMediaPipe();
+      checkSecurityContext();
       requestAnimationFrame(mainRenderLoop);
     });
 
@@ -303,34 +331,119 @@
       updateViewTransform();
     });
 
-    function setupCanvasSize() {
-      canvasElement.width = window.innerWidth;
-      canvasElement.height = window.innerHeight;
-      drawCanvas.width = window.innerWidth;
-      drawCanvas.height = window.innerHeight;
-      updateViewTransform();
+    // Auto-resume camera stream if user switches tabs and returns
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && videoElement.srcObject) {
+        videoElement.play().catch(e => console.log("Auto-play resume suppressed:", e));
+      }
+    });
+
+    function checkSecurityContext() {
+      if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+        const httpsWarn = document.getElementById('httpsWarning');
+        if (httpsWarn) httpsWarn.classList.remove('hidden');
+      }
     }
 
-    function updateViewTransform() {
-      if (!videoElement.videoWidth || !videoElement.videoHeight) return;
-      const vWidth = videoElement.videoWidth;
-      const vHeight = videoElement.videoHeight;
-      const cWidth = canvasElement.width;
-      const cHeight = canvasElement.height;
+    async function userInitiateCamera() {
+      const btn = document.getElementById('btnStartCamera');
+      const statusMsg = document.getElementById('cameraStatusMsg');
+      
+      btn.disabled = true;
+      btn.textContent = "INITIALIZING...";
+      statusMsg.textContent = "Requesting camera permissions...";
 
-      const vAspect = vWidth / vHeight;
-      const cAspect = cWidth / cHeight;
-
-      if (cAspect > vAspect) {
-        viewTransform.drawW = cWidth;
-        viewTransform.drawH = cWidth / vAspect;
-        viewTransform.offsetX = 0;
-        viewTransform.offsetY = (cHeight - viewTransform.drawH) / 2;
+      const success = await initCameraAndMediaPipe();
+      if (success) {
+        const overlay = document.getElementById('startOverlay');
+        overlay.classList.add('opacity-0', 'pointer-events-none');
+        setTimeout(() => overlay.remove(), 350);
       } else {
-        viewTransform.drawH = cHeight;
-        viewTransform.drawW = cHeight * vAspect;
-        viewTransform.offsetX = (cWidth - viewTransform.drawW) / 2;
-        viewTransform.offsetY = 0;
+        btn.disabled = false;
+        btn.textContent = "🔄 RETRY CAMERA ACCESS";
+      }
+    }
+
+    async function initCameraAndMediaPipe() {
+      const statusMsg = document.getElementById('cameraStatusMsg');
+
+      // Initialize MediaPipe Hands Engine
+      if (!handEngine) {
+        try {
+          handEngine = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+          });
+          handEngine.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 0,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+          });
+          handEngine.onResults(onHandResults);
+        } catch (err) {
+          console.error("MediaPipe Init Error:", err);
+        }
+      }
+
+      // Robust Multi-Stage getUserMedia Fallback Strategy
+      let stream = null;
+
+      // Try 1: Preferred facing user with ideal resolution
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+      } catch (e1) {
+        console.warn("Attempt 1 failed, trying fallback constraints...", e1);
+        // Try 2: Basic generic video constraint (Works on virtually all webcams/mobile browsers)
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch (e2) {
+          console.error("Camera Access Final Failure:", e2);
+          
+          if (e2.name === 'NotAllowedError' || e2.name === 'PermissionDeniedError') {
+            statusMsg.innerHTML = "❌ <b>Camera Access Blocked</b><br>Please click the lock icon 🔒 next to your browser URL bar, enable 'Camera', and reload the page.";
+          } else if (e2.name === 'NotFoundError' || e2.name === 'DevicesNotFoundError') {
+            statusMsg.innerHTML = "❌ <b>No Camera Found</b><br>Please connect a webcam or camera device and try again.";
+          } else {
+            statusMsg.innerHTML = `❌ <b>Camera Error:</b> ${e2.message || e2.name}`;
+          }
+          return false;
+        }
+      }
+
+      try {
+        videoElement.srcObject = stream;
+        await videoElement.play();
+        updateViewTransform();
+
+        // Offscreen high-speed downscaler for ultra-fast WASM inference
+        const procCanvas = document.createElement('canvas');
+        procCanvas.width = 360;
+        procCanvas.height = 270;
+        const procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
+
+        const processVideoFrame = async () => {
+          if (!isProcessingFrame && videoElement.readyState >= 2 && handEngine) {
+            isProcessingFrame = true;
+            try {
+              procCtx.drawImage(videoElement, 0, 0, 360, 270);
+              await handEngine.send({ image: procCanvas });
+            } catch (e) {
+              console.warn("MediaPipe processing error:", e);
+            }
+            isProcessingFrame = false;
+          }
+          requestAnimationFrame(processVideoFrame);
+        };
+
+        requestAnimationFrame(processVideoFrame);
+        return true;
+      } catch (playErr) {
+        console.error("Video play error:", playErr);
+        statusMsg.innerHTML = "❌ Failed to start video playback. Please tap retry.";
+        return false;
       }
     }
 
