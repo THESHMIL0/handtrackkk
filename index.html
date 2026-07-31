@@ -13,11 +13,11 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
   <style>
-    /* Glassmorphism & Aesthetics */
+    /* Glassmorphism & Cyber Aesthetics */
     .glass-panel {
       background: rgba(10, 10, 10, 0.85);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
       border: 1px solid rgba(255, 255, 255, 0.15);
       box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.85);
     }
@@ -32,17 +32,18 @@
     .glass-btn:hover, .glass-btn:active {
       background: rgba(255, 255, 255, 0.2);
       border-color: rgba(255, 255, 255, 0.5);
+      box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
     }
 
     .glass-btn.active {
       background: #ffffff;
       color: #000000;
       border-color: #ffffff;
-      box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.6);
     }
 
     .glow-text {
-      text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+      text-shadow: 0 0 10px rgba(255, 255, 255, 0.8), 0 0 20px rgba(255, 255, 255, 0.4);
     }
 
     /* Mobile Safe Area */
@@ -57,13 +58,14 @@
 <body class="h-full w-full bg-black text-white relative font-mono overflow-hidden">
 
   <!-- Live Video Feed (Hidden processing source) -->
-  <video id="webcam" class="opacity-0 pointer-events-none absolute w-full h-full object-cover" playsinline webkit-playsinline></video>
+  <video id="webcam" class="opacity-0 pointer-events-none absolute w-full h-full object-cover" playsinline webkit-playsinline autoplay muted></video>
 
   <!-- AR Render Canvas -->
   <canvas id="arCanvas" onclick="handleCanvasClick()" class="w-full h-full absolute inset-0 object-cover cursor-pointer"></canvas>
 
   <!-- TOGGLEABLE UI CONTAINER -->
   <div id="uiContainer" class="transition-opacity duration-300">
+    
     <!-- TOP HUD OVERLAY -->
     <div class="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 flex justify-between items-start pointer-events-none z-20">
       <!-- Diagnostics Readout -->
@@ -73,7 +75,7 @@
           <span id="hudFps" class="font-bold text-white glow-text">--</span>
         </div>
         <div class="flex items-center justify-between text-[10px] sm:text-xs tracking-wider">
-          <span class="text-neutral-400">HANDS</span>
+          <span id="hudTrackLabel" class="text-neutral-400">HANDS</span>
           <span id="hudHandCount" class="font-bold text-white">0</span>
         </div>
         <div class="flex items-center justify-between text-[10px] sm:text-xs tracking-wider">
@@ -81,16 +83,52 @@
           <span id="hudGesture" class="font-bold text-neutral-300 truncate max-w-[90px] sm:max-w-none">SEARCHING...</span>
         </div>
       </div>
+
+      <!-- Laser Telemetry HUD (Laser Web mode) -->
+      <div id="laserHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex flex-col gap-1 min-w-[160px] sm:min-w-[190px]">
+        <div class="text-[9px] sm:text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
+          <span>LASER MATRIX</span>
+          <span id="laserStatusDot" class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">BEAMS</span>
+          <span id="hudBeamCount" class="font-bold text-white">0</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">NODES</span>
+          <span id="hudNodeCount" class="font-bold text-white">0</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">ENERGY</span>
+          <span id="hudEnergyPower" class="font-bold text-cyan-300">0.0 GW</span>
+        </div>
+      </div>
+
+      <!-- Spatial Draw Telemetry HUD -->
+      <div id="drawHud" class="glass-panel rounded-xl p-2.5 sm:p-3 flex-col gap-1 min-w-[160px] sm:min-w-[190px] hidden">
+        <div class="text-[9px] sm:text-[10px] tracking-widest text-neutral-400 uppercase border-b border-white/10 pb-1 font-semibold flex justify-between items-center">
+          <span>SPATIAL DRAW</span>
+          <span id="drawStatusDot" class="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">TOOL</span>
+          <span id="hudDrawTool" class="font-bold text-amber-300">FREEHAND</span>
+        </div>
+        <div class="flex items-center justify-between text-[10px] sm:text-xs">
+          <span class="text-neutral-400">ACTION</span>
+          <span id="hudDrawAction" class="font-bold text-white">STANDBY</span>
+        </div>
+      </div>
     </div>
 
-    <!-- PINCH NOTIFICATION BADGE -->
+    <!-- NOTIFICATION BADGE -->
     <div id="pinchBadge" class="absolute top-16 sm:top-20 left-1/2 -translate-x-1/2 glass-panel px-3 py-1 sm:px-4 sm:py-1.5 rounded-full text-[10px] sm:text-xs tracking-widest uppercase opacity-0 transition-opacity duration-300 pointer-events-none z-30 font-semibold text-white border border-white/30 text-center whitespace-nowrap">
-      FILTER CHANGED
+      SETTINGS CHANGED
     </div>
 
-    <!-- BOTTOM CONTROL DOCK (ICON ONLY + CAMERA TOGGLE) -->
+    <!-- BOTTOM CONTROL DOCK -->
     <div class="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 pb-safe pointer-events-auto">
-      <div class="flex items-center gap-2 p-1.5 glass-panel rounded-2xl">
+      <div class="flex items-center gap-2 p-1.5 glass-panel rounded-2xl max-w-[95vw] overflow-x-auto">
         
         <!-- Laser Web Mode -->
         <button id="btnLaserMode" onclick="setMode('laser')" title="Laser Web Mode" aria-label="Laser Web Mode" class="glass-btn active w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
@@ -103,6 +141,52 @@
         <button id="btnDimensionMode" onclick="setMode('dimension')" title="Dimension Box Mode" aria-label="Dimension Box Mode" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
           <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/>
+          </svg>
+        </button>
+
+        <!-- Spatial Draw Mode -->
+        <button id="btnDrawMode" onclick="setMode('draw')" title="Spatial Finger Draw Mode" aria-label="Spatial Draw Mode" class="glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0">
+          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+          </svg>
+        </button>
+
+        <!-- Draw Tool Toggle Button: Freehand vs Straight Line (Draw Mode only) -->
+        <button id="btnDrawTool" onclick="toggleDrawTool()" title="Toggle Draw Tool (Freehand / Straight Line)" aria-label="Toggle Tool" class="hidden glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 text-amber-300">
+          <svg id="iconFreehand" class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+          <svg id="iconStraightLine" class="w-5 h-5 sm:w-6 sm:h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 20L20 4M4 20h6M4 20v-6M20 4h-6M20 4v6"/>
+          </svg>
+        </button>
+
+        <!-- Laser Color Palette Dropdown (Laser Mode only) -->
+        <div id="laserColorDropdown" class="border-l border-white/20 pl-2 my-0.5 shrink-0">
+          <select id="laserColorSelect" onchange="changeLaserColor(this.value)" class="bg-black/90 text-white text-[11px] sm:text-xs rounded-xl border border-white/30 px-2 py-2.5 h-11 sm:h-12 focus:outline-none focus:border-white max-w-[110px] sm:max-w-[140px]">
+            <option value="cyan">⚡ Cyan</option>
+            <option value="magenta">🔮 Magenta</option>
+            <option value="emerald">🟢 Emerald</option>
+            <option value="solar">☀️ Solar</option>
+            <option value="monochrome">⚪ Cyber White</option>
+          </select>
+        </div>
+
+        <!-- Draw Color Palette Dropdown (Draw Mode only) -->
+        <div id="drawColorDropdown" class="hidden border-l border-white/20 pl-2 my-0.5 shrink-0">
+          <select id="drawColorSelect" onchange="changeDrawColor(this.value)" class="bg-black/90 text-white text-[11px] sm:text-xs rounded-xl border border-white/30 px-2 py-2.5 h-11 sm:h-12 focus:outline-none focus:border-white max-w-[110px] sm:max-w-[140px]">
+            <option value="cyan">🎨 Cyan</option>
+            <option value="magenta">🔮 Magenta</option>
+            <option value="emerald">🟢 Emerald</option>
+            <option value="solar">☀️ Solar</option>
+            <option value="monochrome">⚪ White</option>
+          </select>
+        </div>
+
+        <!-- Clear Drawing Canvas Button (Draw Mode only) -->
+        <button id="btnClearDraw" onclick="clearDrawCanvas()" title="Clear All Drawings" aria-label="Clear Drawings" class="hidden glass-btn w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 text-rose-400 hover:text-rose-300">
+          <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
           </svg>
         </button>
 
@@ -140,55 +224,128 @@
     Tap anywhere on screen to show UI
   </div>
 
+  <!-- APPLICATION SCRIPT -->
   <script>
-    let currentMode = 'laser'; 
+    let currentMode = 'laser'; // 'laser' | 'dimension' | 'draw'
     let currentFilterIndex = 0;
+    let laserColorTheme = 'cyan';
+    let drawColorTheme = 'cyan';
+    let drawToolMode = 'freehand'; // 'freehand' | 'line'
     let uiVisible = true;
+    
+    // Cached Viewport Transformation for 60 FPS Projection
+    let viewTransform = { drawW: 0, drawH: 0, offsetX: 0, offsetY: 0 };
+    
+    // Laser Particles State
+    let laserParticles = [];
+    
+    // Spatial Draw Offscreen Buffer & State
+    const drawCanvas = document.createElement('canvas');
+    const drawCtx = drawCanvas.getContext('2d');
+    let lastDrawPoints = {}; 
+    let lineStartPoints = {}; 
+    let lastLineEndPoints = {}; 
     
     const videoElement = document.getElementById('webcam');
     const canvasElement = document.getElementById('arCanvas');
     const ctx = canvasElement.getContext('2d');
     
     const hudFps = document.getElementById('hudFps');
+    const hudTrackLabel = document.getElementById('hudTrackLabel');
     const hudHandCount = document.getElementById('hudHandCount');
     const hudGesture = document.getElementById('hudGesture');
+    const hudBeamCount = document.getElementById('hudBeamCount');
+    const hudNodeCount = document.getElementById('hudNodeCount');
+    const hudEnergyPower = document.getElementById('hudEnergyPower');
+    const hudDrawAction = document.getElementById('hudDrawAction');
+    const hudDrawTool = document.getElementById('hudDrawTool');
+    
+    const laserStatusDot = document.getElementById('laserStatusDot');
+    const drawStatusDot = document.getElementById('drawStatusDot');
+    
     const pinchBadge = document.getElementById('pinchBadge');
     const filterDropdown = document.getElementById('filterDropdown');
+    const laserColorDropdown = document.getElementById('laserColorDropdown');
+    const drawColorDropdown = document.getElementById('drawColorDropdown');
+    const btnClearDraw = document.getElementById('btnClearDraw');
+    const btnDrawTool = document.getElementById('btnDrawTool');
+    const iconFreehand = document.getElementById('iconFreehand');
+    const iconStraightLine = document.getElementById('iconStraightLine');
     const uiContainer = document.getElementById('uiContainer');
     const unhideHint = document.getElementById('unhideHint');
 
     let isProcessingFrame = false;
     let handResults = null;
+    let handEngine = null;
+    
     let lastTime = performance.now();
     let frameCount = 0;
     let fps = 0;
     let pinchCooldown = false;
 
+    // Color Schemas
+    const COLOR_THEMES = {
+      cyan: { primary: '#00f3ff', secondary: 'rgba(0, 243, 255, 0.4)', particle: '#70f8ff' },
+      magenta: { primary: '#ff00d0', secondary: 'rgba(255, 0, 208, 0.4)', particle: '#ff7bf1' },
+      emerald: { primary: '#00ff66', secondary: 'rgba(0, 255, 102, 0.4)', particle: '#80ffb2' },
+      solar: { primary: '#ffaa00', secondary: 'rgba(255, 170, 0, 0.4)', particle: '#ffd175' },
+      monochrome: { primary: '#ffffff', secondary: 'rgba(255, 255, 255, 0.3)', particle: '#ffffff' }
+    };
+
     window.addEventListener('load', () => {
       setupCanvasSize();
       initCameraAndMediaPipe();
+      requestAnimationFrame(mainRenderLoop);
     });
 
-    window.addEventListener('resize', setupCanvasSize);
+    window.addEventListener('resize', () => {
+      setupCanvasSize();
+      updateViewTransform();
+    });
 
     function setupCanvasSize() {
       canvasElement.width = window.innerWidth;
       canvasElement.height = window.innerHeight;
+      drawCanvas.width = window.innerWidth;
+      drawCanvas.height = window.innerHeight;
+      updateViewTransform();
+    }
+
+    function updateViewTransform() {
+      if (!videoElement.videoWidth || !videoElement.videoHeight) return;
+      const vWidth = videoElement.videoWidth;
+      const vHeight = videoElement.videoHeight;
+      const cWidth = canvasElement.width;
+      const cHeight = canvasElement.height;
+
+      const vAspect = vWidth / vHeight;
+      const cAspect = cWidth / cHeight;
+
+      if (cAspect > vAspect) {
+        viewTransform.drawW = cWidth;
+        viewTransform.drawH = cWidth / vAspect;
+        viewTransform.offsetX = 0;
+        viewTransform.offsetY = (cHeight - viewTransform.drawH) / 2;
+      } else {
+        viewTransform.drawH = cHeight;
+        viewTransform.drawW = cHeight * vAspect;
+        viewTransform.offsetX = (cWidth - viewTransform.drawW) / 2;
+        viewTransform.offsetY = 0;
+      }
     }
 
     async function initCameraAndMediaPipe() {
-      const hands = new Hands({
+      // Hands Engine
+      handEngine = new Hands({
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
       });
-
-      hands.setOptions({
+      handEngine.setOptions({
         maxNumHands: 2,
-        modelComplexity: 0, 
+        modelComplexity: 0,
         minDetectionConfidence: 0.5,
         minTrackingConfidence: 0.5
       });
-
-      hands.onResults(onHandResults);
+      handEngine.onResults(onHandResults);
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -202,11 +359,23 @@
         
         videoElement.srcObject = stream;
         await videoElement.play();
+        updateViewTransform();
+
+        // Offscreen high-speed downscaler for ultra-fast WASM inference
+        const procCanvas = document.createElement('canvas');
+        procCanvas.width = 360;
+        procCanvas.height = 270;
+        const procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
 
         const processVideoFrame = async () => {
           if (!isProcessingFrame && videoElement.readyState >= 2) {
             isProcessingFrame = true;
-            await hands.send({ image: videoElement });
+            try {
+              procCtx.drawImage(videoElement, 0, 0, 360, 270);
+              await handEngine.send({ image: procCanvas });
+            } catch (e) {
+              console.warn("MediaPipe processing error:", e);
+            }
             isProcessingFrame = false;
           }
           requestAnimationFrame(processVideoFrame);
@@ -215,138 +384,214 @@
         requestAnimationFrame(processVideoFrame);
       } catch (err) {
         console.error('Camera Access Error:', err);
-        showPinchBadge("CAMERA ACCESS DENIED");
+        showToast("CAMERA ACCESS DENIED");
       }
     }
 
     function onHandResults(results) {
       handResults = results;
+    }
+
+    function mainRenderLoop() {
       updateFpsCounter();
 
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
+      // 1. Render live camera frame
       renderBaseVideoFrame();
 
-      const numHands = handResults.multiHandLandmarks ? handResults.multiHandLandmarks.length : 0;
-      hudHandCount.textContent = numHands;
+      // 2. Mode-dependent AR Overlays
+      hudTrackLabel.textContent = "HANDS";
+      if (handResults) {
+        const numHands = handResults.multiHandLandmarks ? handResults.multiHandLandmarks.length : 0;
+        hudHandCount.textContent = numHands;
 
-      checkPinchGesture(handResults);
+        checkPinchGesture(handResults);
 
-      if (currentMode === 'laser') {
-        renderLaserMode(handResults);
-      } else if (currentMode === 'dimension') {
-        renderDimensionBoxMode(handResults);
+        if (currentMode === 'laser') {
+          renderLaserMode(handResults);
+        } else if (currentMode === 'dimension') {
+          renderDimensionBoxMode(handResults);
+        } else if (currentMode === 'draw') {
+          renderSpatialDrawMode(handResults);
+        }
+
+        if (numHands > 0 && currentMode !== 'draw') {
+          drawHandSkeletons(handResults);
+        }
+      } else if (currentMode === 'draw') {
+        ctx.drawImage(drawCanvas, 0, 0);
       }
 
-      if (numHands > 0) {
-        drawHandSkeletons(handResults);
-      }
+      requestAnimationFrame(mainRenderLoop);
     }
 
     function renderBaseVideoFrame() {
       if (videoElement.videoWidth === 0 || videoElement.videoHeight === 0) return;
-
-      const vWidth = videoElement.videoWidth;
-      const vHeight = videoElement.videoHeight;
-      const cWidth = canvasElement.width;
-      const cHeight = canvasElement.height;
-
-      const vAspect = vWidth / vHeight;
-      const cAspect = cWidth / cHeight;
-
-      let drawW, drawH, offsetX, offsetY;
-
-      if (cAspect > vAspect) {
-        drawW = cWidth;
-        drawH = cWidth / vAspect;
-        offsetX = 0;
-        offsetY = (cHeight - drawH) / 2;
-      } else {
-        drawH = cHeight;
-        drawW = cHeight * vAspect;
-        offsetX = (cWidth - drawW) / 2;
-        offsetY = 0;
-      }
+      if (!viewTransform.drawW) updateViewTransform();
 
       ctx.save();
-      ctx.translate(cWidth, 0);
+      ctx.translate(canvasElement.width, 0);
       ctx.scale(-1, 1);
-      ctx.drawImage(videoElement, 0, 0, vWidth, vHeight, offsetX, offsetY, drawW, drawH);
+      ctx.drawImage(
+        videoElement, 
+        0, 0, videoElement.videoWidth, videoElement.videoHeight, 
+        viewTransform.offsetX, viewTransform.offsetY, viewTransform.drawW, viewTransform.drawH
+      );
       ctx.restore();
     }
 
     function mapLandmarkToScreen(landmark) {
-      const vWidth = videoElement.videoWidth || 640;
-      const vHeight = videoElement.videoHeight || 480;
-      const cWidth = canvasElement.width;
-      const cHeight = canvasElement.height;
-
-      const vAspect = vWidth / vHeight;
-      const cAspect = cWidth / cHeight;
-
-      let drawW, drawH, offsetX, offsetY;
-
-      if (cAspect > vAspect) {
-        drawW = cWidth;
-        drawH = cWidth / vAspect;
-        offsetX = 0;
-        offsetY = (cHeight - drawH) / 2;
-      } else {
-        drawH = cHeight;
-        drawW = cHeight * vAspect;
-        offsetX = (cWidth - drawW) / 2;
-        offsetY = 0;
-      }
-
-      const mirroredX = (1 - landmark.x) * drawW + offsetX;
-      const mappedY = landmark.y * drawH + offsetY;
-
-      return { x: mirroredX, y: mappedY };
+      if (!viewTransform.drawW) updateViewTransform();
+      return {
+        x: (1 - landmark.x) * viewTransform.drawW + viewTransform.offsetX,
+        y: landmark.y * viewTransform.drawH + viewTransform.offsetY
+      };
     }
 
+    // --- 1. LASER WEB MODE ---
     function renderLaserMode(results) {
-      hudGesture.textContent = results.multiHandLandmarks?.length ? "LASER ACTIVE" : "SEARCHING...";
-      if (!results.multiHandLandmarks) return;
+      const numHands = results.multiHandLandmarks?.length || 0;
+      hudGesture.textContent = numHands > 0 ? "LASER MATRIX ACTIVE" : "SEARCHING...";
 
-      const keypoints = [];
-      results.multiHandLandmarks.forEach((landmarks) => {
-        const fingerTips = [4, 8, 12, 16, 20];
-        fingerTips.forEach(idx => {
-          keypoints.push(mapLandmarkToScreen(landmarks[idx]));
+      if (!results.multiHandLandmarks || numHands === 0) {
+        hudBeamCount.textContent = '0';
+        hudNodeCount.textContent = '0';
+        hudEnergyPower.textContent = '0.0 GW';
+        return;
+      }
+
+      const theme = COLOR_THEMES[laserColorTheme] || COLOR_THEMES.cyan;
+      const time = performance.now() * 0.005;
+
+      const landmarkIndices = [0, 4, 8, 12, 16, 20, 9];
+      const handsData = results.multiHandLandmarks.map(landmarks => {
+        const mapped = {};
+        landmarkIndices.forEach(idx => {
+          mapped[idx] = mapLandmarkToScreen(landmarks[idx]);
         });
+        return mapped;
       });
+
+      let activeBeams = 0;
+      let totalNodes = 0;
+      const pulsePoints = [];
 
       ctx.save();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
-      ctx.lineWidth = 2;
 
-      for (let i = 0; i < keypoints.length; i++) {
-        for (let j = i + 1; j < keypoints.length; j++) {
-          const ptA = keypoints[i];
-          const ptB = keypoints[j];
-          const dist = Math.hypot(ptA.x - ptB.x, ptA.y - ptB.y);
+      // Intra-hand web
+      handsData.forEach((hand) => {
+        totalNodes += landmarkIndices.length;
+        const ring = [4, 8, 12, 16, 20, 0, 4];
+        const spokes = [0, 4, 8, 12, 16, 20];
+        const palmPt = hand[9];
 
-          if (dist < 300) {
-            const alpha = 1 - (dist / 300);
-            ctx.beginPath();
-            ctx.moveTo(ptA.x, ptA.y);
-            ctx.lineTo(ptB.x, ptB.y);
-            ctx.strokeStyle = `rgba(255, 255, 255, ${alpha.toFixed(2)})`;
-            ctx.stroke();
-          }
-        }
-      }
-
-      ctx.fillStyle = '#ffffff';
-      keypoints.forEach(pt => {
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
-        ctx.fill();
+        for (let r = 0; r < ring.length - 1; r++) {
+          const ptA = hand[ring[r]];
+          const ptB = hand[ring[r+1]];
+          ctx.moveTo(ptA.x, ptA.y);
+          ctx.lineTo(ptB.x, ptB.y);
+          activeBeams++;
+        }
+        spokes.forEach(spokeIdx => {
+          const ptB = hand[spokeIdx];
+          ctx.moveTo(palmPt.x, palmPt.y);
+          ctx.lineTo(ptB.x, ptB.y);
+          activeBeams++;
+        });
+
+        ctx.strokeStyle = theme.secondary;
+        ctx.lineWidth = 3.5;
+        ctx.stroke();
+
+        ctx.beginPath();
+        for (let r = 0; r < ring.length - 1; r++) {
+          const ptA = hand[ring[r]];
+          const ptB = hand[ring[r+1]];
+          ctx.moveTo(ptA.x, ptA.y);
+          ctx.lineTo(ptB.x, ptB.y);
+        }
+        spokes.forEach(spokeIdx => {
+          const ptB = hand[spokeIdx];
+          ctx.moveTo(palmPt.x, palmPt.y);
+          ctx.lineTo(ptB.x, ptB.y);
+        });
+        ctx.strokeStyle = theme.primary;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
       });
 
+      // Inter-hand parallel bridges
+      if (handsData.length >= 2) {
+        const handA = handsData[0];
+        const handB = handsData[1];
+
+        const bridgeConnections = [
+          [0, 0], [4, 4], [8, 8], [12, 12], [16, 16], [20, 20], [9, 9],
+          [4, 8], [8, 4], [8, 12], [12, 8], [12, 16], [16, 12], [16, 20], [20, 16]
+        ];
+
+        ctx.beginPath();
+        bridgeConnections.forEach(([idxA, idxB], pairIdx) => {
+          const ptA = handA[idxA];
+          const ptB = handB[idxB];
+          ctx.moveTo(ptA.x, ptA.y);
+          ctx.lineTo(ptB.x, ptB.y);
+          activeBeams++;
+
+          const pulsePos = (Math.sin(time * 1.5 + pairIdx) + 1) * 0.5;
+          const px = ptA.x + (ptB.x - ptA.x) * pulsePos;
+          const py = ptA.y + (ptB.y - ptA.y) * pulsePos;
+          pulsePoints.push({ x: px, y: py });
+        });
+        ctx.strokeStyle = theme.secondary;
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.beginPath();
+        bridgeConnections.forEach(([idxA, idxB]) => {
+          const ptA = handA[idxA];
+          const ptB = handB[idxB];
+          ctx.moveTo(ptA.x, ptA.y);
+          ctx.lineTo(ptB.x, ptB.y);
+        });
+        ctx.strokeStyle = theme.primary;
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+      }
+
+      // Pulse nodes
+      if (pulsePoints.length > 0) {
+        ctx.beginPath();
+        for (let k = 0; k < pulsePoints.length; k++) {
+          ctx.moveTo(pulsePoints[k].x + 3, pulsePoints[k].y);
+          ctx.arc(pulsePoints[k].x, pulsePoints[k].y, 3, 0, Math.PI * 2);
+        }
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+      }
+
+      // Nodes
+      ctx.beginPath();
+      handsData.forEach(hand => {
+        landmarkIndices.forEach(idx => {
+          const pt = hand[idx];
+          ctx.moveTo(pt.x + 5, pt.y);
+          ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+        });
+      });
+      ctx.fillStyle = theme.primary;
+      ctx.fill();
+
       ctx.restore();
+
+      hudBeamCount.textContent = activeBeams;
+      hudNodeCount.textContent = totalNodes;
+      hudEnergyPower.textContent = `${(activeBeams * 0.42).toFixed(1)} GW`;
     }
 
+    // --- 2. DIMENSION BOX MODE ---
     function renderDimensionBoxMode(results) {
       hudGesture.textContent = "DIMENSION PORTAL";
       if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
@@ -393,15 +638,324 @@
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      ctx.fillStyle = '#ffffff';
       [p1, p2, p3, p4].forEach(p => {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
         ctx.fill();
       });
       ctx.restore();
     }
 
+    // --- 3. SPATIAL DRAW MODE ---
+    function detectHandGesture(landmarks) {
+      const wrist = landmarks[0];
+      const getDist = (pt) => Math.hypot(pt.x - wrist.x, pt.y - wrist.y, pt.z - wrist.z);
+      const mcpBase = getDist(landmarks[9]);
+
+      const isExtended = (tipIdx) => getDist(landmarks[tipIdx]) > mcpBase * 1.15;
+
+      const indexExt = isExtended(8);
+      const middleExt = isExtended(12);
+      const ringExt = isExtended(16);
+      const pinkyExt = isExtended(20);
+
+      if (indexExt && !middleExt && !ringExt && !pinkyExt) return 'point';
+      if (indexExt && middleExt && ringExt && pinkyExt) return 'palm';
+      return 'neutral';
+    }
+
+    function renderSpatialDrawMode(results) {
+      const theme = COLOR_THEMES[drawColorTheme] || COLOR_THEMES.cyan;
+      const numHands = results.multiHandLandmarks?.length || 0;
+      let currentAction = "STANDBY";
+
+      if (results.multiHandLandmarks && numHands > 0) {
+        results.multiHandLandmarks.forEach((landmarks, handIdx) => {
+          const gesture = detectHandGesture(landmarks);
+          const indexTip = mapLandmarkToScreen(landmarks[8]);
+          const palmCenter = mapLandmarkToScreen(landmarks[9]);
+
+          if (gesture === 'point') {
+            currentAction = drawToolMode === 'line' ? "📏 STRAIGHT LINE" : "👉 DRAWING";
+            
+            if (drawToolMode === 'freehand') {
+              const lastPt = lastDrawPoints[handIdx];
+              if (lastPt) {
+                drawCtx.save();
+                drawCtx.beginPath();
+                drawCtx.moveTo(lastPt.x, lastPt.y);
+                drawCtx.lineTo(indexTip.x, indexTip.y);
+                drawCtx.strokeStyle = theme.primary;
+                drawCtx.lineWidth = 6;
+                drawCtx.lineCap = 'round';
+                drawCtx.lineJoin = 'round';
+                drawCtx.shadowColor = theme.primary;
+                drawCtx.shadowBlur = 10;
+                drawCtx.stroke();
+                drawCtx.restore();
+              }
+              lastDrawPoints[handIdx] = indexTip;
+
+            } else if (drawToolMode === 'line') {
+              if (!lineStartPoints[handIdx]) lineStartPoints[handIdx] = indexTip;
+
+              ctx.save();
+              ctx.beginPath();
+              ctx.moveTo(lineStartPoints[handIdx].x, lineStartPoints[handIdx].y);
+              ctx.lineTo(indexTip.x, indexTip.y);
+              ctx.strokeStyle = theme.primary;
+              ctx.lineWidth = 6;
+              ctx.setLineDash([10, 6]);
+              ctx.stroke();
+
+              ctx.beginPath();
+              ctx.arc(lineStartPoints[handIdx].x, lineStartPoints[handIdx].y, 6, 0, Math.PI * 2);
+              ctx.arc(indexTip.x, indexTip.y, 6, 0, Math.PI * 2);
+              ctx.fillStyle = '#ffffff';
+              ctx.fill();
+              ctx.restore();
+
+              lastLineEndPoints[handIdx] = indexTip;
+            }
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(indexTip.x, indexTip.y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = theme.primary;
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(indexTip.x, indexTip.y, 14, 0, Math.PI * 2);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.restore();
+
+          } else if (gesture === 'palm') {
+            currentAction = "✋ ERASING";
+            commitPendingLine(handIdx, theme);
+            lastDrawPoints[handIdx] = null;
+
+            const eraserRadius = 55;
+            drawCtx.save();
+            drawCtx.globalCompositeOperation = 'destination-out';
+            drawCtx.beginPath();
+            drawCtx.arc(palmCenter.x, palmCenter.y, eraserRadius, 0, Math.PI * 2);
+            drawCtx.fill();
+            drawCtx.restore();
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(palmCenter.x, palmCenter.y, eraserRadius, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255, 80, 100, 0.8)';
+            ctx.lineWidth = 2.5;
+            ctx.setLineDash([8, 6]);
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(palmCenter.x, palmCenter.y, eraserRadius * 0.85, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 50, 80, 0.15)';
+            ctx.fill();
+            ctx.restore();
+
+          } else {
+            commitPendingLine(handIdx, theme);
+            lastDrawPoints[handIdx] = null;
+          }
+        });
+      } else {
+        Object.keys(lineStartPoints).forEach(handIdx => commitPendingLine(handIdx, theme));
+        lastDrawPoints = {};
+      }
+
+      hudGesture.textContent = numHands > 0 ? currentAction : "SEARCHING...";
+      hudDrawAction.textContent = currentAction;
+      ctx.drawImage(drawCanvas, 0, 0);
+    }
+
+    function commitPendingLine(handIdx, theme) {
+      if (lineStartPoints[handIdx] && lastLineEndPoints[handIdx]) {
+        drawCtx.save();
+        drawCtx.beginPath();
+        drawCtx.moveTo(lineStartPoints[handIdx].x, lineStartPoints[handIdx].y);
+        drawCtx.lineTo(lastLineEndPoints[handIdx].x, lastLineEndPoints[handIdx].y);
+        drawCtx.strokeStyle = theme.primary;
+        drawCtx.lineWidth = 6;
+        drawCtx.lineCap = 'round';
+        drawCtx.shadowColor = theme.primary;
+        drawCtx.shadowBlur = 10;
+        drawCtx.stroke();
+        drawCtx.restore();
+
+        lineStartPoints[handIdx] = null;
+        lastLineEndPoints[handIdx] = null;
+      }
+    }
+
+    // --- 4. CYBER FACE DETECTION SCANNER MODE ---
+    function renderFaceMode(results) {
+      const numFaces = results?.multiFaceLandmarks?.length || 0;
+      hudHandCount.textContent = numFaces;
+
+      if (!results || !results.multiFaceLandmarks || numFaces === 0) {
+        smoothedFaceLandmarks = [];
+        hudGesture.textContent = "SEARCHING FACE...";
+        hudFaceStatus.textContent = "SCANNING";
+        hudFaceStatus.className = "font-bold text-amber-300 animate-pulse";
+        hudFaceCount.textContent = "0";
+        hudFaceConfidence.textContent = "--";
+        faceStatusDot.className = "w-2 h-2 rounded-full bg-amber-400 animate-ping";
+        return;
+      }
+
+      hudGesture.textContent = `TARGETS LOCKED (${numFaces})`;
+      hudFaceStatus.textContent = "LOCKED";
+      hudFaceStatus.className = "font-bold text-cyan-300";
+      hudFaceCount.textContent = numFaces;
+      hudFaceConfidence.textContent = `${(98.5 + Math.min(1.4, numFaces * 0.3)).toFixed(1)}%`;
+      faceStatusDot.className = "w-2 h-2 rounded-full bg-cyan-400 animate-ping";
+
+      // Clean stale smoothed face arrays if face count changed
+      if (smoothedFaceLandmarks.length > numFaces) {
+        smoothedFaceLandmarks.length = numFaces;
+      }
+
+      ctx.save();
+
+      results.multiFaceLandmarks.forEach((landmarks, faceIdx) => {
+        const rawMapped = landmarks.map(lm => mapLandmarkToScreen(lm));
+
+        // Exponential Moving Average (EMA) Lerp Smoothing for zero-jitter visual tracking
+        if (!smoothedFaceLandmarks[faceIdx] || smoothedFaceLandmarks[faceIdx].length !== rawMapped.length) {
+          smoothedFaceLandmarks[faceIdx] = rawMapped;
+        } else {
+          const smoothFactor = 0.42;
+          for (let i = 0; i < rawMapped.length; i++) {
+            smoothedFaceLandmarks[faceIdx][i].x += (rawMapped[i].x - smoothedFaceLandmarks[faceIdx][i].x) * smoothFactor;
+            smoothedFaceLandmarks[faceIdx][i].y += (rawMapped[i].y - smoothedFaceLandmarks[faceIdx][i].y) * smoothFactor;
+          }
+        }
+
+        const mappedLandmarks = smoothedFaceLandmarks[faceIdx];
+
+        // Only draw the Batman Mask (Removed all cybernetic target lines for clean look)
+        if (batMaskEnabled) {
+          drawBatmanMask(ctx, mappedLandmarks);
+        }
+      });
+
+      ctx.restore();
+    }
+
+    // --- BATMAN COWL MASK RENDERER (Low Poly Style) ---
+    function drawBatmanMask(ctx, landmarks) {
+      const get = (idx) => landmarks[idx];
+      
+      const topCenter = get(10);
+      const bottomChin = get(152);
+      const leftEdge = get(234);
+      const rightEdge = get(454);
+      
+      if (!topCenter || !bottomChin || !leftEdge || !rightEdge) return;
+
+      const dx = topCenter.x - bottomChin.x;
+      const dy = topCenter.y - bottomChin.y;
+      const faceH = Math.hypot(dx, dy);
+      
+      // Face Orientation Vectors to keep mask pinned during rotation
+      const upX = dx / faceH;
+      const upY = dy / faceH;
+      const rX = -upY; // Right vector X
+      const rY = upX;  // Right vector Y
+      
+      const faceW = Math.hypot(rightEdge.x - leftEdge.x, rightEdge.y - leftEdge.y);
+
+      // 1. Core Points for Low-Poly Silhouette
+      const pTopCenter = { x: topCenter.x - upX * faceH * 0.02, y: topCenter.y - upY * faceH * 0.02 };
+      
+      // Ear Spikes
+      const earH = faceH * 0.65;
+      const earW = faceW * 0.38;
+      const pLeftEar = { x: topCenter.x + upX * earH - rX * earW, y: topCenter.y + upY * earH - rY * earW };
+      const pRightEar = { x: topCenter.x + upX * earH + rX * earW, y: topCenter.y + upY * earH + rY * earW };
+      
+      // Ear Bases (Forehead curve)
+      const pLeftEarInner = { x: topCenter.x + upX * faceH * 0.15 - rX * faceW * 0.15, y: topCenter.y + upY * faceH * 0.15 - rY * faceW * 0.15 };
+      const pRightEarInner = { x: topCenter.x + upX * faceH * 0.15 + rX * faceW * 0.15, y: topCenter.y + upY * faceH * 0.15 + rY * faceW * 0.15 };
+
+      // Outer Cheek Boundaries
+      const pLeftCheek = { x: leftEdge.x - rX * faceW * 0.08, y: leftEdge.y - rY * faceW * 0.08 };
+      const pRightCheek = { x: rightEdge.x + rX * faceW * 0.08, y: rightEdge.y + rY * faceW * 0.08 };
+      
+      // Sharp Cheek Drops (Jaws)
+      const pLeftDrop = { x: get(132).x - rX * faceW * 0.02 - upX * faceH * 0.15, y: get(132).y - rY * faceW * 0.02 - upY * faceH * 0.15 };
+      const pRightDrop = { x: get(361).x + rX * faceW * 0.02 - upX * faceH * 0.15, y: get(361).y + rY * faceW * 0.02 - upY * faceH * 0.15 };
+
+      // Nose V Cutout
+      const pNoseBottom = get(164);
+      
+      ctx.save();
+
+      // 2. Render Main Solid Black Mask Polygon
+      ctx.beginPath();
+      ctx.moveTo(pTopCenter.x, pTopCenter.y);
+      
+      // Left Half
+      ctx.quadraticCurveTo(pLeftEarInner.x, pLeftEarInner.y, pLeftEar.x, pLeftEar.y);
+      ctx.lineTo(pLeftCheek.x, pLeftCheek.y);
+      ctx.lineTo(pLeftDrop.x, pLeftDrop.y);
+      ctx.lineTo(pNoseBottom.x, pNoseBottom.y);
+      
+      // Right Half
+      ctx.lineTo(pRightDrop.x, pRightDrop.y);
+      ctx.lineTo(pRightCheek.x, pRightCheek.y);
+      ctx.lineTo(pRightEar.x, pRightEar.y);
+      ctx.quadraticCurveTo(pRightEarInner.x, pRightEarInner.y, pTopCenter.x, pTopCenter.y);
+      
+      ctx.fillStyle = '#050505';
+      ctx.fill();
+      
+      // 3. Render Right-Side Low Poly Highlight Facet
+      const pRightHighlightTop = { x: pRightEar.x - rX * faceW * 0.04, y: pRightEar.y - upY * faceH * 0.1 };
+      const pRightHighlightInner = { x: pRightCheek.x - rX * faceW * 0.16, y: pRightCheek.y + upY * faceH * 0.12 };
+      
+      ctx.beginPath();
+      ctx.moveTo(pRightEar.x, pRightEar.y);
+      ctx.lineTo(pRightCheek.x, pRightCheek.y);
+      ctx.lineTo(pRightDrop.x, pRightDrop.y);
+      ctx.quadraticCurveTo(pRightHighlightInner.x, pRightHighlightInner.y, pRightHighlightTop.x, pRightHighlightTop.y);
+      
+      ctx.fillStyle = '#55545e'; // Deep grey highlight
+      ctx.fill();
+
+      // 4. Render Sharp White Angled Eyes
+      const eyeW = faceW * 0.28;
+      const eyeH = faceH * 0.06;
+      
+      // Left Eye
+      const lC = get(159);
+      ctx.beginPath();
+      ctx.moveTo(lC.x - rX * eyeW * 0.5 + upX * eyeH * 0.8, lC.y - rY * eyeW * 0.5 + upY * eyeH * 0.8); // Top Outer
+      ctx.lineTo(lC.x + rX * eyeW * 0.4 - upX * eyeH * 0.6, lC.y + rY * eyeW * 0.4 - upY * eyeH * 0.6); // Top Inner (Slanted down)
+      ctx.lineTo(lC.x + rX * eyeW * 0.3 - upX * eyeH * 1.5, lC.y + rY * eyeW * 0.3 - upY * eyeH * 1.5); // Bottom Inner
+      ctx.lineTo(lC.x - rX * eyeW * 0.5 - upX * eyeH * 0.2, lC.y - rY * eyeW * 0.5 - upY * eyeH * 0.2); // Bottom Outer
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // Right Eye
+      const rC = get(386);
+      ctx.beginPath();
+      ctx.moveTo(rC.x - rX * eyeW * 0.4 - upX * eyeH * 0.6, rC.y - rY * eyeW * 0.4 - upY * eyeH * 0.6); // Top Inner (Slanted down)
+      ctx.lineTo(rC.x + rX * eyeW * 0.5 + upX * eyeH * 0.8, rC.y + rY * eyeW * 0.5 + upY * eyeH * 0.8); // Top Outer
+      ctx.lineTo(rC.x + rX * eyeW * 0.5 - upX * eyeH * 0.2, rC.y + rY * eyeW * 0.5 - upY * eyeH * 0.2); // Bottom Outer
+      ctx.lineTo(rC.x - rX * eyeW * 0.3 - upX * eyeH * 1.5, rC.y - rY * eyeW * 0.3 - upY * eyeH * 1.5); // Bottom Inner
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    // --- UTILITIES & UI CONTROLS ---
     function applyFilterPreset(index) {
       switch (parseInt(index)) {
         case 0: ctx.filter = 'contrast(180%) brightness(120%) grayscale(100%)'; break;
@@ -429,7 +983,7 @@
           if (currentMode === 'dimension') {
             currentFilterIndex = (currentFilterIndex + 1) % 7;
             document.getElementById('filterSelect').value = currentFilterIndex;
-            showPinchBadge("FILTER CHANGED");
+            showToast("FILTER CHANGED");
           }
 
           setTimeout(() => { pinchCooldown = false; }, 800);
@@ -438,7 +992,7 @@
       }
     }
 
-    function showPinchBadge(text) {
+    function showToast(text) {
       if (!uiVisible) return;
       if (text) pinchBadge.textContent = text;
       pinchBadge.classList.remove('opacity-0');
@@ -485,26 +1039,30 @@
       ];
 
       ctx.save();
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-      ctx.lineWidth = 1.5;
-      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = laserColorTheme === 'monochrome' ? 'rgba(255, 255, 255, 0.3)' : COLOR_THEMES[laserColorTheme]?.secondary || 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 1.2;
 
+      ctx.beginPath();
       results.multiHandLandmarks.forEach(landmarks => {
         const mapped = landmarks.map(mapLandmarkToScreen);
-
-        ctx.beginPath();
         connections.forEach(([i, j]) => {
           ctx.moveTo(mapped[i].x, mapped[i].y);
           ctx.lineTo(mapped[j].x, mapped[j].y);
         });
-        ctx.stroke();
+      });
+      ctx.stroke();
 
+      ctx.beginPath();
+      ctx.fillStyle = '#ffffff';
+      results.multiHandLandmarks.forEach(landmarks => {
+        const mapped = landmarks.map(mapLandmarkToScreen);
         mapped.forEach(pt => {
-          ctx.beginPath();
+          ctx.moveTo(pt.x + 2, pt.y);
           ctx.arc(pt.x, pt.y, 2, 0, Math.PI * 2);
-          ctx.fill();
         });
       });
+      ctx.fill();
+
       ctx.restore();
     }
 
@@ -524,13 +1082,55 @@
 
       document.getElementById('btnLaserMode').classList.toggle('active', mode === 'laser');
       document.getElementById('btnDimensionMode').classList.toggle('active', mode === 'dimension');
+      document.getElementById('btnDrawMode').classList.toggle('active', mode === 'draw');
 
       filterDropdown.classList.toggle('hidden', mode !== 'dimension');
+      laserColorDropdown.classList.toggle('hidden', mode !== 'laser');
+      drawColorDropdown.classList.toggle('hidden', mode !== 'draw');
+
+      btnClearDraw.classList.toggle('hidden', mode !== 'draw');
+      btnDrawTool.classList.toggle('hidden', mode !== 'draw');
+
+      document.getElementById('laserHud').classList.toggle('hidden', mode !== 'laser');
+
+      document.getElementById('drawHud').classList.toggle('hidden', mode !== 'draw');
+      document.getElementById('drawHud').classList.toggle('flex', mode === 'draw');
+
+      showToast(`MODE: ${mode.toUpperCase()}`);
+    }
+
+    function toggleDrawTool() {
+      drawToolMode = drawToolMode === 'freehand' ? 'line' : 'freehand';
+      iconFreehand.classList.toggle('hidden', drawToolMode !== 'freehand');
+      iconStraightLine.classList.toggle('hidden', drawToolMode !== 'line');
+      hudDrawTool.textContent = drawToolMode.toUpperCase();
+      showToast(`TOOL: ${drawToolMode.toUpperCase()}`);
     }
 
     function changeFilter(val) {
       currentFilterIndex = parseInt(val);
-      showPinchBadge("FILTER CHANGED");
+      showToast("FILTER CHANGED");
+    }
+
+    function changeLaserColor(color) {
+      laserColorTheme = color;
+      const theme = COLOR_THEMES[color] || COLOR_THEMES.cyan;
+      laserStatusDot.style.backgroundColor = theme.primary;
+      showToast(`LASER: ${color.toUpperCase()}`);
+    }
+
+    function changeDrawColor(color) {
+      drawColorTheme = color;
+      const theme = COLOR_THEMES[color] || COLOR_THEMES.cyan;
+      drawStatusDot.style.backgroundColor = theme.primary;
+      showToast(`BRUSH: ${color.toUpperCase()}`);
+    }
+
+    function clearDrawCanvas() {
+      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+      lineStartPoints = {};
+      lastLineEndPoints = {};
+      showToast("CANVAS CLEARED");
     }
   </script>
 </body>
