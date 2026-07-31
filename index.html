@@ -264,9 +264,6 @@
     // Cached Viewport Transformation for 60 FPS Projection
     let viewTransform = { drawW: 0, drawH: 0, offsetX: 0, offsetY: 0 };
     
-    // Laser Particles State
-    let laserParticles = [];
-    
     // Spatial Draw Offscreen Buffer & State
     const drawCanvas = document.createElement('canvas');
     const drawCtx = drawCanvas.getContext('2d');
@@ -303,13 +300,13 @@
     const unhideHint = document.getElementById('unhideHint');
 
     let isProcessingFrame = false;
+    let isProcessingLoopStarted = false;
     let handResults = null;
     let handEngine = null;
     
     let lastTime = performance.now();
     let frameCount = 0;
     let fps = 0;
-    let pinchCooldown = false;
 
     // Color Schemas
     const COLOR_THEMES = {
@@ -338,6 +335,14 @@
       }
     });
 
+    function setupCanvasSize() {
+      canvasElement.width = window.innerWidth;
+      canvasElement.height = window.innerHeight;
+      drawCanvas.width = window.innerWidth;
+      drawCanvas.height = window.innerHeight;
+      updateViewTransform();
+    }
+
     function checkSecurityContext() {
       if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
         const httpsWarn = document.getElementById('httpsWarning');
@@ -353,21 +358,66 @@
       btn.textContent = "INITIALIZING...";
       statusMsg.textContent = "Requesting camera permissions...";
 
-      const success = await initCameraAndMediaPipe();
-      if (success) {
-        const overlay = document.getElementById('startOverlay');
-        overlay.classList.add('opacity-0', 'pointer-events-none');
-        setTimeout(() => overlay.remove(), 350);
-      } else {
+      try {
+        const success = await initCameraAndMediaPipe(statusMsg);
+        if (success) {
+          const overlay = document.getElementById('startOverlay');
+          overlay.classList.add('opacity-0', 'pointer-events-none');
+          setTimeout(() => overlay.remove(), 350);
+        } else {
+          btn.disabled = false;
+          btn.textContent = "🔄 RETRY CAMERA ACCESS";
+        }
+      } catch (err) {
+        console.error("Camera setup failed:", err);
+        statusMsg.innerHTML = "❌ <b>Camera Exception:</b> " + (err.message || err);
         btn.disabled = false;
         btn.textContent = "🔄 RETRY CAMERA ACCESS";
       }
     }
 
-    async function initCameraAndMediaPipe() {
-      const statusMsg = document.getElementById('cameraStatusMsg');
+    async function initCameraAndMediaPipe(statusMsg) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        statusMsg.innerHTML = "❌ <b>Camera API Not Supported</b><br>Your browser or current connection (e.g. HTTP instead of HTTPS) blocks camera access.";
+        return false;
+      }
 
-      // Initialize MediaPipe Hands Engine
+      // Stage 1: Request Camera Stream directly first so permission dialog opens immediately
+      let stream = null;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+          audio: false
+        });
+      } catch (e1) {
+        console.warn("Preferred camera constraint failed, using generic fallback...", e1);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        } catch (e2) {
+          console.error("Camera Access Error:", e2);
+          if (e2.name === 'NotAllowedError' || e2.name === 'PermissionDeniedError') {
+            statusMsg.innerHTML = "❌ <b>Camera Permission Denied</b><br>Please click the lock icon 🔒 in your browser address bar, allow Camera access, and refresh.";
+          } else if (e2.name === 'NotFoundError' || e2.name === 'DevicesNotFoundError') {
+            statusMsg.innerHTML = "❌ <b>No Camera Detected</b><br>Please connect a webcam or camera device.";
+          } else {
+            statusMsg.innerHTML = `❌ <b>Camera Access Error:</b> ${e2.message || e2.name}`;
+          }
+          return false;
+        }
+      }
+
+      // Attach stream to video element
+      try {
+        videoElement.srcObject = stream;
+        await videoElement.play();
+        updateViewTransform();
+      } catch (playErr) {
+        console.error("Video play error:", playErr);
+        statusMsg.innerHTML = "❌ Failed to start video playback. Tap retry.";
+        return false;
+      }
+
+      // Stage 2: Initialize MediaPipe Hands Engine in background
       if (!handEngine) {
         try {
           handEngine = new Hands({
@@ -381,44 +431,13 @@
           });
           handEngine.onResults(onHandResults);
         } catch (err) {
-          console.error("MediaPipe Init Error:", err);
+          console.error("MediaPipe Hands Init Warning:", err);
         }
       }
 
-      // Robust Multi-Stage getUserMedia Fallback Strategy
-      let stream = null;
-
-      // Try 1: Preferred facing user with ideal resolution
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
-        });
-      } catch (e1) {
-        console.warn("Attempt 1 failed, trying fallback constraints...", e1);
-        // Try 2: Basic generic video constraint (Works on virtually all webcams/mobile browsers)
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        } catch (e2) {
-          console.error("Camera Access Final Failure:", e2);
-          
-          if (e2.name === 'NotAllowedError' || e2.name === 'PermissionDeniedError') {
-            statusMsg.innerHTML = "❌ <b>Camera Access Blocked</b><br>Please click the lock icon 🔒 next to your browser URL bar, enable 'Camera', and reload the page.";
-          } else if (e2.name === 'NotFoundError' || e2.name === 'DevicesNotFoundError') {
-            statusMsg.innerHTML = "❌ <b>No Camera Found</b><br>Please connect a webcam or camera device and try again.";
-          } else {
-            statusMsg.innerHTML = `❌ <b>Camera Error:</b> ${e2.message || e2.name}`;
-          }
-          return false;
-        }
-      }
-
-      try {
-        videoElement.srcObject = stream;
-        await videoElement.play();
-        updateViewTransform();
-
-        // Offscreen high-speed downscaler for ultra-fast WASM inference
+      // Stage 3: Start downsampled WASM processing loop
+      if (!isProcessingLoopStarted) {
+        isProcessingLoopStarted = true;
         const procCanvas = document.createElement('canvas');
         procCanvas.width = 360;
         procCanvas.height = 270;
@@ -431,7 +450,7 @@
               procCtx.drawImage(videoElement, 0, 0, 360, 270);
               await handEngine.send({ image: procCanvas });
             } catch (e) {
-              console.warn("MediaPipe processing error:", e);
+              // Frame drop resilience
             }
             isProcessingFrame = false;
           }
@@ -439,70 +458,41 @@
         };
 
         requestAnimationFrame(processVideoFrame);
-        return true;
-      } catch (playErr) {
-        console.error("Video play error:", playErr);
-        statusMsg.innerHTML = "❌ Failed to start video playback. Please tap retry.";
-        return false;
       }
-    }
 
-    async function initCameraAndMediaPipe() {
-      // Hands Engine
-      handEngine = new Hands({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
-      });
-      handEngine.setOptions({
-        maxNumHands: 2,
-        modelComplexity: 0,
-        minDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5
-      });
-      handEngine.onResults(onHandResults);
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            facingMode: 'user'
-          },
-          audio: false
-        });
-        
-        videoElement.srcObject = stream;
-        await videoElement.play();
-        updateViewTransform();
-
-        // Offscreen high-speed downscaler for ultra-fast WASM inference
-        const procCanvas = document.createElement('canvas');
-        procCanvas.width = 360;
-        procCanvas.height = 270;
-        const procCtx = procCanvas.getContext('2d', { willReadFrequently: true });
-
-        const processVideoFrame = async () => {
-          if (!isProcessingFrame && videoElement.readyState >= 2) {
-            isProcessingFrame = true;
-            try {
-              procCtx.drawImage(videoElement, 0, 0, 360, 270);
-              await handEngine.send({ image: procCanvas });
-            } catch (e) {
-              console.warn("MediaPipe processing error:", e);
-            }
-            isProcessingFrame = false;
-          }
-          requestAnimationFrame(processVideoFrame);
-        };
-
-        requestAnimationFrame(processVideoFrame);
-      } catch (err) {
-        console.error('Camera Access Error:', err);
-        showToast("CAMERA ACCESS DENIED");
-      }
+      return true;
     }
 
     function onHandResults(results) {
       handResults = results;
+    }
+
+    function updateViewTransform() {
+      if (!videoElement.videoWidth || !videoElement.videoHeight) return;
+      const canvasW = canvasElement.width;
+      const canvasH = canvasElement.height;
+      const videoAspect = videoElement.videoWidth / videoElement.videoHeight;
+      const canvasAspect = canvasW / canvasH;
+
+      if (canvasAspect > videoAspect) {
+        viewTransform.drawW = canvasW;
+        viewTransform.drawH = canvasW / videoAspect;
+        viewTransform.offsetX = 0;
+        viewTransform.offsetY = (canvasH - viewTransform.drawH) / 2;
+      } else {
+        viewTransform.drawH = canvasH;
+        viewTransform.drawW = canvasH * videoAspect;
+        viewTransform.offsetX = (canvasW - viewTransform.drawW) / 2;
+        viewTransform.offsetY = 0;
+      }
+    }
+
+    function mapLandmarkToScreen(landmark) {
+      if (!viewTransform.drawW) updateViewTransform();
+      return {
+        x: (1 - landmark.x) * viewTransform.drawW + viewTransform.offsetX,
+        y: landmark.y * viewTransform.drawH + viewTransform.offsetY
+      };
     }
 
     function mainRenderLoop() {
@@ -518,8 +508,6 @@
       if (handResults) {
         const numHands = handResults.multiHandLandmarks ? handResults.multiHandLandmarks.length : 0;
         hudHandCount.textContent = numHands;
-
-        checkPinchGesture(handResults);
 
         if (currentMode === 'laser') {
           renderLaserMode(handResults);
@@ -554,15 +542,6 @@
       ctx.restore();
     }
 
-    function mapLandmarkToScreen(landmark) {
-      if (!viewTransform.drawW) updateViewTransform();
-      return {
-        x: (1 - landmark.x) * viewTransform.drawW + viewTransform.offsetX,
-        y: landmark.y * viewTransform.drawH + viewTransform.offsetY
-      };
-    }
-
-    // --- 1. LASER WEB MODE ---
     function renderLaserMode(results) {
       const numHands = results.multiHandLandmarks?.length || 0;
       hudGesture.textContent = numHands > 0 ? "LASER MATRIX ACTIVE" : "SEARCHING...";
@@ -592,7 +571,7 @@
 
       ctx.save();
 
-      // Intra-hand web
+      // Intra-hand structured web
       handsData.forEach((hand) => {
         totalNodes += landmarkIndices.length;
         const ring = [4, 8, 12, 16, 20, 0, 4];
@@ -635,14 +614,13 @@
         ctx.stroke();
       });
 
-      // Inter-hand parallel bridges
+      // Inter-hand parallel bridges (Orderly Finger-to-Finger Lattice)
       if (handsData.length >= 2) {
         const handA = handsData[0];
         const handB = handsData[1];
 
         const bridgeConnections = [
-          [0, 0], [4, 4], [8, 8], [12, 12], [16, 16], [20, 20], [9, 9],
-          [4, 8], [8, 4], [8, 12], [12, 8], [12, 16], [16, 12], [16, 20], [20, 16]
+          [0, 0], [4, 4], [8, 8], [12, 12], [16, 16], [20, 20], [9, 9]
         ];
 
         ctx.beginPath();
@@ -674,7 +652,7 @@
         ctx.stroke();
       }
 
-      // Pulse nodes
+      // Traveling Energy Pulses
       if (pulsePoints.length > 0) {
         ctx.beginPath();
         for (let k = 0; k < pulsePoints.length; k++) {
@@ -685,7 +663,7 @@
         ctx.fill();
       }
 
-      // Nodes
+      // Hand Nodes
       ctx.beginPath();
       handsData.forEach(hand => {
         landmarkIndices.forEach(idx => {
@@ -704,7 +682,6 @@
       hudEnergyPower.textContent = `${(activeBeams * 0.42).toFixed(1)} GW`;
     }
 
-    // --- 2. DIMENSION BOX MODE ---
     function renderDimensionBoxMode(results) {
       hudGesture.textContent = "DIMENSION PORTAL";
       if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
@@ -760,7 +737,6 @@
       ctx.restore();
     }
 
-    // --- 3. SPATIAL DRAW MODE ---
     function detectHandGesture(landmarks) {
       const wrist = landmarks[0];
       const getDist = (pt) => Math.hypot(pt.x - wrist.x, pt.y - wrist.y, pt.z - wrist.z);
@@ -905,170 +881,6 @@
       }
     }
 
-    // --- 4. CYBER FACE DETECTION SCANNER MODE ---
-    function renderFaceMode(results) {
-      const numFaces = results?.multiFaceLandmarks?.length || 0;
-      hudHandCount.textContent = numFaces;
-
-      if (!results || !results.multiFaceLandmarks || numFaces === 0) {
-        smoothedFaceLandmarks = [];
-        hudGesture.textContent = "SEARCHING FACE...";
-        hudFaceStatus.textContent = "SCANNING";
-        hudFaceStatus.className = "font-bold text-amber-300 animate-pulse";
-        hudFaceCount.textContent = "0";
-        hudFaceConfidence.textContent = "--";
-        faceStatusDot.className = "w-2 h-2 rounded-full bg-amber-400 animate-ping";
-        return;
-      }
-
-      hudGesture.textContent = `TARGETS LOCKED (${numFaces})`;
-      hudFaceStatus.textContent = "LOCKED";
-      hudFaceStatus.className = "font-bold text-cyan-300";
-      hudFaceCount.textContent = numFaces;
-      hudFaceConfidence.textContent = `${(98.5 + Math.min(1.4, numFaces * 0.3)).toFixed(1)}%`;
-      faceStatusDot.className = "w-2 h-2 rounded-full bg-cyan-400 animate-ping";
-
-      // Clean stale smoothed face arrays if face count changed
-      if (smoothedFaceLandmarks.length > numFaces) {
-        smoothedFaceLandmarks.length = numFaces;
-      }
-
-      ctx.save();
-
-      results.multiFaceLandmarks.forEach((landmarks, faceIdx) => {
-        const rawMapped = landmarks.map(lm => mapLandmarkToScreen(lm));
-
-        // Exponential Moving Average (EMA) Lerp Smoothing for zero-jitter visual tracking
-        if (!smoothedFaceLandmarks[faceIdx] || smoothedFaceLandmarks[faceIdx].length !== rawMapped.length) {
-          smoothedFaceLandmarks[faceIdx] = rawMapped;
-        } else {
-          const smoothFactor = 0.42;
-          for (let i = 0; i < rawMapped.length; i++) {
-            smoothedFaceLandmarks[faceIdx][i].x += (rawMapped[i].x - smoothedFaceLandmarks[faceIdx][i].x) * smoothFactor;
-            smoothedFaceLandmarks[faceIdx][i].y += (rawMapped[i].y - smoothedFaceLandmarks[faceIdx][i].y) * smoothFactor;
-          }
-        }
-
-        const mappedLandmarks = smoothedFaceLandmarks[faceIdx];
-
-        // Only draw the Batman Mask (Removed all cybernetic target lines for clean look)
-        if (batMaskEnabled) {
-          drawBatmanMask(ctx, mappedLandmarks);
-        }
-      });
-
-      ctx.restore();
-    }
-
-    // --- BATMAN COWL MASK RENDERER (Low Poly Style) ---
-    function drawBatmanMask(ctx, landmarks) {
-      const get = (idx) => landmarks[idx];
-      
-      const topCenter = get(10);
-      const bottomChin = get(152);
-      const leftEdge = get(234);
-      const rightEdge = get(454);
-      
-      if (!topCenter || !bottomChin || !leftEdge || !rightEdge) return;
-
-      const dx = topCenter.x - bottomChin.x;
-      const dy = topCenter.y - bottomChin.y;
-      const faceH = Math.hypot(dx, dy);
-      
-      // Face Orientation Vectors to keep mask pinned during rotation
-      const upX = dx / faceH;
-      const upY = dy / faceH;
-      const rX = -upY; // Right vector X
-      const rY = upX;  // Right vector Y
-      
-      const faceW = Math.hypot(rightEdge.x - leftEdge.x, rightEdge.y - leftEdge.y);
-
-      // 1. Core Points for Low-Poly Silhouette
-      const pTopCenter = { x: topCenter.x - upX * faceH * 0.02, y: topCenter.y - upY * faceH * 0.02 };
-      
-      // Ear Spikes
-      const earH = faceH * 0.65;
-      const earW = faceW * 0.38;
-      const pLeftEar = { x: topCenter.x + upX * earH - rX * earW, y: topCenter.y + upY * earH - rY * earW };
-      const pRightEar = { x: topCenter.x + upX * earH + rX * earW, y: topCenter.y + upY * earH + rY * earW };
-      
-      // Ear Bases (Forehead curve)
-      const pLeftEarInner = { x: topCenter.x + upX * faceH * 0.15 - rX * faceW * 0.15, y: topCenter.y + upY * faceH * 0.15 - rY * faceW * 0.15 };
-      const pRightEarInner = { x: topCenter.x + upX * faceH * 0.15 + rX * faceW * 0.15, y: topCenter.y + upY * faceH * 0.15 + rY * faceW * 0.15 };
-
-      // Outer Cheek Boundaries
-      const pLeftCheek = { x: leftEdge.x - rX * faceW * 0.08, y: leftEdge.y - rY * faceW * 0.08 };
-      const pRightCheek = { x: rightEdge.x + rX * faceW * 0.08, y: rightEdge.y + rY * faceW * 0.08 };
-      
-      // Sharp Cheek Drops (Jaws)
-      const pLeftDrop = { x: get(132).x - rX * faceW * 0.02 - upX * faceH * 0.15, y: get(132).y - rY * faceW * 0.02 - upY * faceH * 0.15 };
-      const pRightDrop = { x: get(361).x + rX * faceW * 0.02 - upX * faceH * 0.15, y: get(361).y + rY * faceW * 0.02 - upY * faceH * 0.15 };
-
-      // Nose V Cutout
-      const pNoseBottom = get(164);
-      
-      ctx.save();
-
-      // 2. Render Main Solid Black Mask Polygon
-      ctx.beginPath();
-      ctx.moveTo(pTopCenter.x, pTopCenter.y);
-      
-      // Left Half
-      ctx.quadraticCurveTo(pLeftEarInner.x, pLeftEarInner.y, pLeftEar.x, pLeftEar.y);
-      ctx.lineTo(pLeftCheek.x, pLeftCheek.y);
-      ctx.lineTo(pLeftDrop.x, pLeftDrop.y);
-      ctx.lineTo(pNoseBottom.x, pNoseBottom.y);
-      
-      // Right Half
-      ctx.lineTo(pRightDrop.x, pRightDrop.y);
-      ctx.lineTo(pRightCheek.x, pRightCheek.y);
-      ctx.lineTo(pRightEar.x, pRightEar.y);
-      ctx.quadraticCurveTo(pRightEarInner.x, pRightEarInner.y, pTopCenter.x, pTopCenter.y);
-      
-      ctx.fillStyle = '#050505';
-      ctx.fill();
-      
-      // 3. Render Right-Side Low Poly Highlight Facet
-      const pRightHighlightTop = { x: pRightEar.x - rX * faceW * 0.04, y: pRightEar.y - upY * faceH * 0.1 };
-      const pRightHighlightInner = { x: pRightCheek.x - rX * faceW * 0.16, y: pRightCheek.y + upY * faceH * 0.12 };
-      
-      ctx.beginPath();
-      ctx.moveTo(pRightEar.x, pRightEar.y);
-      ctx.lineTo(pRightCheek.x, pRightCheek.y);
-      ctx.lineTo(pRightDrop.x, pRightDrop.y);
-      ctx.quadraticCurveTo(pRightHighlightInner.x, pRightHighlightInner.y, pRightHighlightTop.x, pRightHighlightTop.y);
-      
-      ctx.fillStyle = '#55545e'; // Deep grey highlight
-      ctx.fill();
-
-      // 4. Render Sharp White Angled Eyes
-      const eyeW = faceW * 0.28;
-      const eyeH = faceH * 0.06;
-      
-      // Left Eye
-      const lC = get(159);
-      ctx.beginPath();
-      ctx.moveTo(lC.x - rX * eyeW * 0.5 + upX * eyeH * 0.8, lC.y - rY * eyeW * 0.5 + upY * eyeH * 0.8); // Top Outer
-      ctx.lineTo(lC.x + rX * eyeW * 0.4 - upX * eyeH * 0.6, lC.y + rY * eyeW * 0.4 - upY * eyeH * 0.6); // Top Inner (Slanted down)
-      ctx.lineTo(lC.x + rX * eyeW * 0.3 - upX * eyeH * 1.5, lC.y + rY * eyeW * 0.3 - upY * eyeH * 1.5); // Bottom Inner
-      ctx.lineTo(lC.x - rX * eyeW * 0.5 - upX * eyeH * 0.2, lC.y - rY * eyeW * 0.5 - upY * eyeH * 0.2); // Bottom Outer
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-
-      // Right Eye
-      const rC = get(386);
-      ctx.beginPath();
-      ctx.moveTo(rC.x - rX * eyeW * 0.4 - upX * eyeH * 0.6, rC.y - rY * eyeW * 0.4 - upY * eyeH * 0.6); // Top Inner (Slanted down)
-      ctx.lineTo(rC.x + rX * eyeW * 0.5 + upX * eyeH * 0.8, rC.y + rY * eyeW * 0.5 + upY * eyeH * 0.8); // Top Outer
-      ctx.lineTo(rC.x + rX * eyeW * 0.5 - upX * eyeH * 0.2, rC.y + rY * eyeW * 0.5 - upY * eyeH * 0.2); // Bottom Outer
-      ctx.lineTo(rC.x - rX * eyeW * 0.3 - upX * eyeH * 1.5, rC.y - rY * eyeW * 0.3 - upY * eyeH * 1.5); // Bottom Inner
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-
-      ctx.restore();
-    }
-
-    // --- UTILITIES & UI CONTROLS ---
     function applyFilterPreset(index) {
       switch (parseInt(index)) {
         case 0: ctx.filter = 'contrast(180%) brightness(120%) grayscale(100%)'; break;
@@ -1079,29 +891,6 @@
         case 5: ctx.filter = 'invert(100%) hue-rotate(240deg) saturate(400%)'; break;
         case 6: ctx.filter = 'invert(100%) grayscale(100%)'; break;
         default: ctx.filter = 'none';
-      }
-    }
-
-    function checkPinchGesture(results) {
-      if (!results.multiHandLandmarks) return;
-
-      for (let landmarks of results.multiHandLandmarks) {
-        const indexTip = mapLandmarkToScreen(landmarks[8]);
-        const thumbTip = mapLandmarkToScreen(landmarks[4]);
-        const dist = Math.hypot(indexTip.x - thumbTip.x, indexTip.y - thumbTip.y);
-
-        if (dist < 26 && !pinchCooldown) {
-          pinchCooldown = true;
-
-          if (currentMode === 'dimension') {
-            currentFilterIndex = (currentFilterIndex + 1) % 7;
-            document.getElementById('filterSelect').value = currentFilterIndex;
-            showToast("FILTER CHANGED");
-          }
-
-          setTimeout(() => { pinchCooldown = false; }, 800);
-          break;
-        }
       }
     }
 
