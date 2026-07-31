@@ -489,24 +489,45 @@
         ctx.restore();
       }
 
-      // Compute Box Bounds across all points
-      const allPts = handsScreen.flat();
+      // Compute Box Bounds anchored strictly between Thumb Tip (4) and Index Tip (8)
+      const boxPts = [];
+      handsScreen.forEach(hand => {
+        boxPts.push(hand[4]); // Thumb Tip
+        boxPts.push(hand[8]); // Index Tip
+      });
+
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      allPts.forEach(pt => {
+      boxPts.forEach(pt => {
         if (pt.x < minX) minX = pt.x;
         if (pt.y < minY) minY = pt.y;
         if (pt.x > maxX) maxX = pt.x;
         if (pt.y > maxY) maxY = pt.y;
       });
 
-      const padding = 25;
+      // Ensure minimum dimension for framing window so it stays legible on pinch
+      let w = maxX - minX;
+      let h = maxY - minY;
+      const minBoxSize = 80;
+
+      if (w < minBoxSize) {
+        const cx = (minX + maxX) / 2;
+        minX = cx - minBoxSize / 2;
+        maxX = cx + minBoxSize / 2;
+      }
+      if (h < minBoxSize) {
+        const cy = (minY + maxY) / 2;
+        minY = cy - minBoxSize / 2;
+        maxY = cy + minBoxSize / 2;
+      }
+
+      const padding = 15;
       minX = Math.max(0, minX - padding);
       minY = Math.max(0, minY - padding);
       maxX = Math.min(state.canvas.width, maxX + padding);
       maxY = Math.min(state.canvas.height, maxY + padding);
 
-      const w = maxX - minX;
-      const h = maxY - minY;
+      w = maxX - minX;
+      h = maxY - minY;
       if (w <= 0 || h <= 0) return;
 
       const currentFilter = state.boxFilters[state.boxFilterIndex];
